@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Drive continuously and latch-stop in a front distance band."""
+"""Drive continuously, stop for front obstacles, and resume when clear."""
 
 import math
 import time
@@ -179,6 +179,7 @@ class LidarStopDrive(Node):
         self.start_time = time.monotonic()
         self.last_wait_warning = 0.0
         self.driving = False
+        self.obstacle_stopped = False
         self.stop_latched = False
 
         self.subscription = self.create_subscription(
@@ -200,9 +201,26 @@ class LidarStopDrive(Node):
             return
         self.hardware.stop()
         self.driving = False
+        self.obstacle_stopped = False
         self.stop_latched = True
         self.get_logger().error(f"정지: {reason}")
         self.get_logger().error("안전을 위해 자동 재출발하지 않습니다. 다시 실행하세요.")
+
+    def stop_for_obstacle(self, nearest):
+        if self.obstacle_stopped:
+            return
+        self.hardware.stop()
+        self.driving = False
+        self.obstacle_stopped = True
+        self.get_logger().warning(
+            f"장애물 정지: 가장 가까운 장애물 {nearest:.3f} m "
+            f"(정지 구간 {STOP_DISTANCE_MIN_M:.2f}~"
+            f"{STOP_DISTANCE_MAX_M:.2f} m)"
+        )
+        self.get_logger().info(
+            f"장애물이 {STOP_DISTANCE_MAX_M:.2f} m 밖으로 사라지면 "
+            "자동으로 다시 주행합니다"
+        )
 
     def scan_callback(self, scan):
         self.last_scan_time = time.monotonic()
@@ -215,12 +233,17 @@ class LidarStopDrive(Node):
             return
 
         if is_in_stop_distance_band(nearest):
-            self.latch_stop(
-                f"가장 가까운 장애물 {nearest:.3f} m "
-                f"(정지 구간 {STOP_DISTANCE_MIN_M:.2f}~"
-                f"{STOP_DISTANCE_MAX_M:.2f} m)"
-            )
+            self.stop_for_obstacle(nearest)
             return
+
+        resuming = False
+        if self.obstacle_stopped:
+            # A reading below the stop band means the obstacle got closer,
+            # not that it disappeared. Resume only after it is beyond 0.30 m.
+            if nearest < STOP_DISTANCE_MIN_M:
+                return
+            self.obstacle_stopped = False
+            resuming = True
 
         if not self.driving:
             self.hardware.set_speed(DRIVE_SPEED_US)
@@ -231,7 +254,8 @@ class LidarStopDrive(Node):
                 else f"최근접 거리 {nearest:.3f} m"
             )
             self.get_logger().info(
-                f"주행 시작: {DRIVE_SPEED_US} us, {nearest_text}, "
+                f"{'주행 재개' if resuming else '주행 시작'}: "
+                f"{DRIVE_SPEED_US} us, {nearest_text}, "
                 "장애물 감지까지 계속 주행"
             )
 
