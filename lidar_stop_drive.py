@@ -16,6 +16,7 @@ I2C_BUS = 7
 PCA_ADDR = 0x40
 PCA_FREQ = 50
 THROTTLE_CH = 8
+STEERING_CH = 9
 
 MUX_PIN = 15
 MUX_FREQ = 50
@@ -23,6 +24,7 @@ MUX_DUTY = 10.0
 
 NEUTRAL_US = 1500
 DRIVE_SPEED_US = 1565
+STEERING_CENTER_US = 1640
 
 # LiDAR 안전 설정
 SCAN_TOPIC = "/scan"
@@ -64,13 +66,14 @@ def set_pwm_us(bus, channel, pulse_us):
 
 
 class DriveHardware:
-    """Own the PCA9685 ESC output and MUX selection signal."""
+    """Own the PCA9685 ESC/steering outputs and MUX selection signal."""
 
     def __init__(self):
         self.bus = None
         self.mux_pwm = None
         self.gpio = None
         self.current_speed_us = None
+        self.current_steering_us = None
 
         try:
             import Jetson.GPIO as GPIO
@@ -79,8 +82,9 @@ class DriveHardware:
             self.bus = SMBus(I2C_BUS)
             init_pca9685(self.bus)
 
-            # MUX 전환 전에 ESC 입력을 먼저 중립으로 만든다.
+            # MUX 전환 전에 ESC 중립과 조향 중앙을 먼저 출력한다.
             self.set_speed(NEUTRAL_US)
+            self.set_steering(STEERING_CENTER_US)
 
             self.gpio.setwarnings(False)
             self.gpio.setmode(self.gpio.BOARD)
@@ -100,11 +104,19 @@ class DriveHardware:
     def stop(self):
         self.set_speed(NEUTRAL_US)
 
+    def set_steering(self, pulse_us):
+        if self.bus is None or self.current_steering_us == pulse_us:
+            return
+        set_pwm_us(self.bus, STEERING_CH, pulse_us)
+        self.current_steering_us = pulse_us
+
     def close(self):
         if self.bus is not None:
             try:
                 set_pwm_us(self.bus, THROTTLE_CH, NEUTRAL_US)
                 self.current_speed_us = NEUTRAL_US
+                set_pwm_us(self.bus, STEERING_CH, STEERING_CENTER_US)
+                self.current_steering_us = STEERING_CENTER_US
                 time.sleep(0.2)
             except OSError as exc:
                 print(f"ESC 중립 출력 실패: {exc}")
@@ -194,6 +206,9 @@ class LidarStopDrive(Node):
             f"{SCAN_TOPIC} 대기 중: LiDAR {FRONT_CENTER_DEG:.0f}° 중심 "
             f"±{FRONT_HALF_ANGLE_DEG:.0f}°에서 "
             f"{STOP_DISTANCE_MIN_M:.2f}~{STOP_DISTANCE_MAX_M:.2f} m 감지 시 정지"
+        )
+        self.get_logger().info(
+            f"조향 중앙 유지: PCA9685 CH{STEERING_CH}, {STEERING_CENTER_US} us"
         )
 
     def latch_stop(self, reason):
