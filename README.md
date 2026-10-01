@@ -1,0 +1,228 @@
+# Jetson ROS 2 LiDAR 차량 제어
+
+Jetson 기반 소형 차량에서 ROS 2와 Slamtec LiDAR를 사용해 전방 장애물을 감지하고, PCA9685를 통해 ESC를 제어하는 작업공간입니다. 카메라 영상 발행, PWM 상태 확인, 조향 및 구동 시험 코드도 함께 들어 있습니다.
+
+## 핵심 동작
+
+메인 실행 파일은 `run_lidar_stop_rviz.sh`입니다. 이 스크립트는 다음 프로그램을 함께 실행합니다.
+
+1. Slamtec C1 LiDAR 드라이버
+2. `/scan` 데이터를 표시하는 RViz
+3. `lidar_stop_drive.py` 주행 및 정지 제어
+
+`lidar_stop_drive.py`의 현재 동작은 다음과 같습니다.
+
+- LiDAR 토픽: `/scan`
+- 검사 방향: 차량 정면 `0도` 기준 좌우 `30도`
+- 주행 출력: PCA9685 채널 8에 `1565 us`
+- 중립 출력: `1500 us`
+- 최대 주행 시간: `10초`
+- 거리 정지 조건: 정면 최근접 거리가 `0.20 m 이상 0.30 m 이하`
+- 센서 단절 정지: `/scan`이 `0.5초` 넘게 끊기면 중립 출력
+- 한 번 정지하면 자동 재출발하지 않으며 프로그램을 다시 실행해야 함
+
+> 주의: 현재 요청된 설정에 따라 `0.20 m 미만`의 측정값은 거리 정지 조건에서 제외됩니다. 매우 가까운 장애물을 무시할 수 있으므로 반드시 저속 및 안전한 시험 공간에서 사용해야 합니다.
+
+## 사용 하드웨어와 환경
+
+현재 코드는 아래 구성을 기준으로 작성되어 있습니다.
+
+- NVIDIA Jetson 계열 보드
+- ROS 2 Jazzy
+- Slamtec C1 LiDAR (`/dev/ttyUSB0`, 460800 baud)
+- PCA9685 PWM 컨트롤러 (`I2C bus 7`, 주소 `0x40`, 50 Hz)
+- ESC 및 조향 서보
+- RC/자동 입력 전환용 MUX
+- Jetson 물리 핀 15: MUX 선택 PWM, 50 Hz, duty 10%
+- USB 카메라: `/dev/video0`
+
+실제 배선에 따라 PCA9685 채널과 PWM 값이 달라질 수 있습니다. 특히 `pca9685_drive_test.py`의 기본 채널은 조향 8, 스로틀 9이지만, LiDAR 주행 코드는 기존 `test3.py` 설정을 따라 스로틀 채널 8을 사용합니다. 실행 전에 실제 배선과 각 파일의 상수를 확인하세요.
+
+## 저장소 구조
+
+| 경로 | 역할 |
+| --- | --- |
+| `lidar_stop_drive.py` | `/scan`을 구독하면서 차량을 최대 10초 주행하고 조건에 따라 래치 정지 |
+| `run_lidar_stop_rviz.sh` | Slamtec C1, RViz, LiDAR 주행 코드를 한 번에 실행하고 함께 종료 |
+| `pca9685_drive_test.py` | PCA9685 조향·속도 대화형 시험. `--dry-run` 지원 |
+| `test3.py` | PCA9685 채널 8 ESC 속도를 단계적으로 높이는 시험 |
+| `test3_straight.py` | 설정 속도로 계속 직진하며 `Ctrl+C`에서 중립 정지 |
+| `test2.py` | PCA9685 조향을 키보드 명령으로 시험 |
+| `steering.py`, `test.py` | Jetson sysfs PWM 기반 조향 반복 시험 |
+| `straight.py`, `smooth_straight.py` | sysfs PWM 기반 직진 및 속도 시험 |
+| `pwm_test.py` | sysfs PWM 조향 좌우 시험 |
+| `sel_test.py` | MUX 선택 핀 HIGH/LOW 전환 시험 |
+| `src/camera_node` | USB 카메라 영상을 `/camera/image_raw`로 발행하는 ROS 2 패키지 |
+| `src/pwm_reader` | sysfs PWM duty를 읽어 `/pwm_duty`로 발행하는 ROS 2 패키지 |
+| `src/sllidar_ros2` | Slamtec 공식 ROS 2 드라이버 Git submodule |
+| `HARDWARE_CHANGELOG.txt` | 배선, PWM, MUX, LiDAR 설정 변경 기록 |
+
+`build/`, `install/`, `log/`는 빌드 시 생성되므로 GitHub에 포함되지 않습니다.
+
+## 내려받기
+
+Slamtec 드라이버가 submodule로 연결되어 있으므로 다음과 같이 복제합니다.
+
+```bash
+git clone --recurse-submodules https://github.com/huis2-2/ros2_ws.git
+cd ros2_ws
+```
+
+일반 `git clone`을 이미 사용했다면 submodule을 별도로 받습니다.
+
+```bash
+git submodule update --init --recursive
+```
+
+## 필요한 소프트웨어
+
+- ROS 2 Jazzy 및 `colcon`
+- ROS 패키지: `rclpy`, `sensor_msgs`, `std_msgs`, `cv_bridge`
+- Python 패키지: `smbus2`, `Jetson.GPIO`, OpenCV
+- Slamtec 드라이버가 요구하는 ROS 2 의존성
+
+가능한 ROS 의존성은 작업공간 루트에서 다음 명령으로 설치할 수 있습니다.
+
+```bash
+source /opt/ros/jazzy/setup.bash
+rosdep install --from-paths src --ignore-src -r -y
+```
+
+직렬 장치, I2C, GPIO 접근 권한도 필요합니다. 그룹을 변경한 뒤에는 로그아웃 후 다시 로그인하거나 재부팅해야 현재 세션에 반영됩니다.
+
+```bash
+sudo usermod -aG dialout,i2c,gpio "$USER"
+```
+
+## 빌드
+
+```bash
+cd ~/ros2_ws
+source /opt/ros/jazzy/setup.bash
+colcon build --symlink-install
+source install/setup.bash
+```
+
+## LiDAR 장애물 정지 주행
+
+차량 바퀴를 띄우거나 충분한 안전 공간을 확보한 후 실행합니다.
+
+```bash
+cd ~/ros2_ws
+./run_lidar_stop_rviz.sh
+```
+
+LiDAR가 다른 직렬 장치로 연결되었다면 환경 변수로 지정할 수 있습니다.
+
+```bash
+LIDAR_PORT=/dev/ttyUSB1 ./run_lidar_stop_rviz.sh
+```
+
+종료는 실행한 터미널에서 `Ctrl+C`를 누릅니다. 종료 처리에서 ESC에 중립값 `1500 us`를 출력합니다.
+
+### 개별 실행
+
+LiDAR만 실행하려면 다음 명령을 사용합니다.
+
+```bash
+source /opt/ros/jazzy/setup.bash
+source ~/ros2_ws/install/setup.bash
+ros2 launch sllidar_ros2 sllidar_c1_launch.py serial_port:=/dev/ttyUSB0
+```
+
+다른 터미널에서 `/scan` 발행을 확인할 수 있습니다.
+
+```bash
+source /opt/ros/jazzy/setup.bash
+ros2 topic hz /scan
+ros2 topic echo /scan --once
+```
+
+주행 코드만 실행하려면 다음 명령을 사용합니다. 이 경우 LiDAR 드라이버가 이미 `/scan`을 발행하고 있어야 합니다.
+
+```bash
+cd ~/ros2_ws
+source /opt/ros/jazzy/setup.bash
+source install/setup.bash
+python3 lidar_stop_drive.py
+```
+
+## ROS 2 보조 노드
+
+### 카메라
+
+`/dev/video0`의 640x480, 30 FPS 영상을 `/camera/image_raw`로 발행하고 OpenCV 창에도 표시합니다.
+
+```bash
+ros2 run camera_node camera_node
+```
+
+### PWM 상태 읽기
+
+세 sysfs PWM 경로의 duty 비율을 50 Hz로 읽어 `/pwm_duty`에 `[PWM1, PWM5, PWM7]` 순서로 발행합니다.
+
+```bash
+ros2 run pwm_reader pwm_reader_node
+```
+
+## 하드웨어 없이 제어 코드 확인
+
+`pca9685_drive_test.py`는 `--dry-run`에서 I2C와 GPIO에 접근하지 않고 출력 예정 값을 보여줍니다.
+
+```bash
+python3 pca9685_drive_test.py --dry-run
+```
+
+명령 키는 다음과 같습니다.
+
+- `a`, `d`, `c`: 왼쪽, 오른쪽, 중앙
+- `j`, `l`: 조향 미세 조정
+- `w`, `s`: 속도 증가 및 감소
+- `x`: 즉시 속도 중립
+- `p`: 현재 상태 표시
+- `q`: 종료
+
+## 문제 해결
+
+### `/scan`이 없음
+
+```bash
+ls -l /dev/ttyUSB0
+ros2 node list
+ros2 topic list -t
+```
+
+LiDAR 장치는 보이지만 열 수 없다면 현재 사용자가 `dialout` 그룹에 반영됐는지 `id`로 확인합니다.
+
+### I2C 장치를 열 수 없음
+
+```bash
+ls -l /dev/i2c-7
+id
+```
+
+PCA9685 주소와 연결 상태는 시스템에 `i2cdetect`가 설치된 경우 다음과 같이 확인할 수 있습니다.
+
+```bash
+i2cdetect -y 7
+```
+
+### 프로그램은 실행되지만 차량이 움직이지 않음
+
+- `/scan`이 실제로 발행되는지 확인합니다.
+- 시작 시 ESC 중립 안정화 시간 3초를 기다립니다.
+- MUX가 Jetson/PCA9685 입력을 선택했는지 확인합니다.
+- 코드의 PCA9685 채널이 실제 ESC 배선과 같은지 확인합니다.
+- ESC 전원, 중립값, 구동 PWM 값을 확인합니다.
+
+## 안전 주의사항
+
+- 처음 시험할 때는 구동 바퀴를 지면에서 띄우세요.
+- 사람이 있는 장소나 도로에서 시험하지 마세요.
+- ESC 중립값과 진행 방향을 확인한 뒤 속도를 올리세요.
+- LiDAR만을 유일한 충돌 방지 장치로 사용하지 마세요.
+- 프로그램 비정상 종료에 대비해 물리 전원 차단 수단을 준비하세요.
+
+## 라이선스
+
+이 저장소 자체에는 아직 통합 라이선스가 지정되어 있지 않습니다. `src/sllidar_ros2`에는 해당 upstream 프로젝트의 라이선스가 별도로 적용됩니다.
