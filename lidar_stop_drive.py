@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Drive for 10 seconds and latch-stop in a front distance band."""
+"""Drive continuously and latch-stop in a front distance band."""
 
 import math
 import time
@@ -30,7 +30,6 @@ STOP_DISTANCE_MIN_M = 0.20
 STOP_DISTANCE_MAX_M = 0.30
 DISTANCE_COMPARISON_TOLERANCE_M = 1e-6
 SCAN_TIMEOUT_SEC = 0.5
-DRIVE_DURATION_SEC = 10.0
 FRONT_CENTER_DEG = 0.0
 FRONT_HALF_ANGLE_DEG = 30.0
 
@@ -179,7 +178,6 @@ class LidarStopDrive(Node):
         self.start_time = time.monotonic()
         self.last_wait_warning = 0.0
         self.driving = False
-        self.drive_start_time = None
         self.stop_latched = False
 
         self.subscription = self.create_subscription(
@@ -225,7 +223,6 @@ class LidarStopDrive(Node):
         if not self.driving:
             self.hardware.set_speed(DRIVE_SPEED_US)
             self.driving = True
-            self.drive_start_time = time.monotonic()
             nearest_text = (
                 "측정 범위 내 장애물 없음"
                 if math.isinf(nearest)
@@ -233,7 +230,7 @@ class LidarStopDrive(Node):
             )
             self.get_logger().info(
                 f"주행 시작: {DRIVE_SPEED_US} us, {nearest_text}, "
-                f"최대 {DRIVE_DURATION_SEC:.0f}초"
+                "장애물 감지까지 계속 주행"
             )
 
     def check_scan_timeout(self):
@@ -249,14 +246,6 @@ class LidarStopDrive(Node):
             self.latch_stop(
                 f"LiDAR 데이터가 {SCAN_TIMEOUT_SEC:.1f}초 이상 끊겼습니다"
             )
-            return
-
-        if (
-            self.driving
-            and self.drive_start_time is not None
-            and now - self.drive_start_time >= DRIVE_DURATION_SEC
-        ):
-            self.latch_stop(f"{DRIVE_DURATION_SEC:.0f}초 주행 완료")
 
 
 def main(args=None):
