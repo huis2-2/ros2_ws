@@ -14,7 +14,8 @@ from sensor_msgs.msg import LaserScan
 SCAN_TOPIC = "/scan"
 REPORT_INTERVAL_SEC = 1.0
 SCAN_TIMEOUT_SEC = 2.0
-FRONT_CENTER_DEG = 0.0
+# LiDAR is mounted with its 0° direction facing the rear of the vehicle.
+FRONT_CENTER_DEG = 180.0
 FRONT_HALF_ANGLE_DEG = 30.0
 
 
@@ -64,7 +65,8 @@ class LidarDistanceMonitor(Node):
         )
 
         self.get_logger().info(
-            f"{SCAN_TOPIC} 대기 중: 정면 ±{FRONT_HALF_ANGLE_DEG:.0f}° "
+            f"{SCAN_TOPIC} 대기 중: LiDAR {FRONT_CENTER_DEG:.0f}° 중심 "
+            f"±{FRONT_HALF_ANGLE_DEG:.0f}° "
             f"최근접 거리를 {REPORT_INTERVAL_SEC:.0f}초마다 출력합니다"
         )
         self.get_logger().info("이 노드는 모터 또는 조향 장치를 제어하지 않습니다")

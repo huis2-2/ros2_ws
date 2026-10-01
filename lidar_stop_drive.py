@@ -30,7 +30,8 @@ STOP_DISTANCE_MIN_M = 0.20
 STOP_DISTANCE_MAX_M = 0.30
 DISTANCE_COMPARISON_TOLERANCE_M = 1e-6
 SCAN_TIMEOUT_SEC = 0.5
-FRONT_CENTER_DEG = 0.0
+# LiDAR is mounted with its 0° direction facing the rear of the vehicle.
+FRONT_CENTER_DEG = 180.0
 FRONT_HALF_ANGLE_DEG = 30.0
 
 MODE1 = 0x00
@@ -189,7 +190,8 @@ class LidarStopDrive(Node):
         self.watchdog = self.create_timer(0.1, self.check_scan_timeout)
 
         self.get_logger().info(
-            f"{SCAN_TOPIC} 대기 중: 정면 ±{FRONT_HALF_ANGLE_DEG:.0f}°에서 "
+            f"{SCAN_TOPIC} 대기 중: LiDAR {FRONT_CENTER_DEG:.0f}° 중심 "
+            f"±{FRONT_HALF_ANGLE_DEG:.0f}°에서 "
             f"{STOP_DISTANCE_MIN_M:.2f}~{STOP_DISTANCE_MAX_M:.2f} m 감지 시 정지"
         )
 
