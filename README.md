@@ -44,6 +44,8 @@ Jetson 기반 소형 차량에서 ROS 2와 Slamtec LiDAR를 사용해 전방 장
 | --- | --- |
 | `lidar_stop_drive.py` | `/scan`을 구독하면서 계속 주행하고 조건에 따라 래치 정지 |
 | `run_lidar_stop_rviz.sh` | Slamtec C1, RViz, LiDAR 주행 코드를 한 번에 실행하고 함께 종료 |
+| `lidar_distance_monitor.py` | 주행 없이 정면 최근접 장애물 거리를 1초마다 출력 |
+| `run_lidar_distance_monitor.sh` | LiDAR와 거리 모니터만 한 번에 실행 |
 | `pca9685_drive_test.py` | PCA9685 조향·속도 대화형 시험. `--dry-run` 지원 |
 | `test3.py` | PCA9685 채널 8 ESC 속도를 단계적으로 높이는 시험 |
 | `test3_straight.py` | 설정 속도로 계속 직진하며 `Ctrl+C`에서 중립 정지 |
@@ -145,6 +147,24 @@ cd ~/ros2_ws
 source /opt/ros/jazzy/setup.bash
 source install/setup.bash
 python3 lidar_stop_drive.py
+```
+
+## 주행 없이 거리만 확인
+
+다음 명령은 ESC와 조향 장치에 접근하지 않습니다. Slamtec C1 드라이버를 실행하고 정면 0도 기준 좌우 30도 안의 최근접 장애물 거리를 1초마다 터미널에 출력합니다.
+
+```bash
+cd ~/ros2_ws
+./run_lidar_distance_monitor.sh
+```
+
+종료하려면 `Ctrl+C`를 누릅니다. LiDAR 드라이버가 이미 실행 중이라면 모니터만 별도로 실행할 수도 있습니다.
+
+```bash
+cd ~/ros2_ws
+source /opt/ros/jazzy/setup.bash
+source install/setup.bash
+python3 lidar_distance_monitor.py
 ```
 
 ## ROS 2 보조 노드
