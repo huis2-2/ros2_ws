@@ -23,8 +23,8 @@ SCAN_TIMEOUT_SEC = 0.5
 AVOID_DISTANCE_M = 0.80
 CLEAR_DISTANCE_M = 0.95
 EMERGENCY_DISTANCE_M = 0.30
-SIDE_CLEARANCE_M = 0.60
 BODY_CLEARANCE_M = 0.25
+DIRECTION_SWITCH_MARGIN_M = 0.15
 MIN_TURN_SEC, MAX_ALIGN_SEC = 0.40, 1.50
 STEERING_SETTLE_SEC = 0.20
 CLEAR_SCANS = 3
@@ -175,19 +175,16 @@ class AvoidController:
             if d.front > AVOID_DISTANCE_M:
                 self.state = 'CRUISE'
                 return 'STRAIGHT'
-            available = [(d.left, 'LEFT'), (d.right, 'RIGHT')]
-            available = [x for x in available if x[0] >= SIDE_CLEARANCE_M]
-            if not available:
-                return self.halt('양쪽 모두 회피 공간 부족')
-            self.direction = max(available, key=lambda x: x[0])[1]
+            self.direction = 'LEFT' if d.left >= d.right else 'RIGHT'
             self.state, self.phase_time = 'PREPARE', now
             return 'STOP_' + self.direction
         chosen = d.left if self.direction == 'LEFT' else d.right
-        if chosen < SIDE_CLEARANCE_M:
-            # The original corridor closed. Re-evaluate both sides instead of
-            # stopping permanently; update() will still halt if neither opens.
-            self.state, self.direction = 'CRUISE', None
-            return self.update(d, now)
+        other = d.right if self.direction == 'LEFT' else d.left
+        if other >= chosen + DIRECTION_SWITCH_MARGIN_M:
+            # Stop briefly to settle the steering before changing direction.
+            self.direction = self.opposite()
+            self.state, self.phase_time = 'PREPARE', now
+            return 'STOP_' + self.direction
         if self.state == 'PREPARE':
             if now - self.phase_time < STEERING_SETTLE_SEC:
                 return 'STOP_' + self.direction
@@ -203,9 +200,7 @@ class AvoidController:
             # Keep avoiding while the chosen corridor remains open. There is
             # intentionally no time limit; distance checks above remain active.
             return self.direction
-        # 반대 조향의 바퀴 진행방향에도 공간이 있어야 한다.
-        opposite_space = d.right if self.direction == 'LEFT' else d.left
-        if opposite_space < SIDE_CLEARANCE_M or d.front <= AVOID_DISTANCE_M:
+        if d.front <= AVOID_DISTANCE_M:
             # A new obstacle appeared while aligning. Choose a fresh avoidance
             # direction rather than treating this as a permanent failure.
             self.state, self.direction = 'CRUISE', None
@@ -264,7 +259,7 @@ def main():
             self.get_logger().info('실제 주행' if hardware else '판단 로그 시험: PWM 출력 없음')
             self.get_logger().info(
                 '감지 기준: 전방 0.80m 회피, 0.30m 급정지, '
-                '좌우 0.60m 이상 통로 선택'
+                '좌우 중 더 넓은 통로 선택'
             )
             self.get_logger().info(
                 '상태 표시: STRAIGHT=직진, LEFT/RIGHT=회피, '

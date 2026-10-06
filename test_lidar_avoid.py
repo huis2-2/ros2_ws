@@ -52,6 +52,15 @@ class AvoidControllerTests(unittest.TestCase):
         )
         self.assertNotEqual(controller.state, 'HALT')
 
+    def test_chooses_wider_side_below_old_clearance_limit(self):
+        controller = AvoidController()
+        command = controller.update(
+            Distances(0.70, 0.50, 0.40),
+            0.0,
+        )
+        self.assertEqual(command, 'STOP_LEFT')
+        self.assertNotEqual(controller.state, 'HALT')
+
     def test_emergency_stop_is_latched(self):
         controller = AvoidController()
         self.assertEqual(
