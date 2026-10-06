@@ -23,7 +23,6 @@ SCAN_TIMEOUT_SEC = 0.5
 AVOID_DISTANCE_M = 0.80
 CLEAR_DISTANCE_M = 0.95
 EMERGENCY_DISTANCE_M = 0.30
-BODY_CLEARANCE_M = 0.25
 DIRECTION_SWITCH_MARGIN_M = 0.15
 MIN_TURN_SEC, MAX_ALIGN_SEC = 0.40, 1.50
 CLEAR_SCANS = 3
@@ -167,8 +166,6 @@ class AvoidController:
             return self.pause('정면/좌/우 구간의 유효 측정 부족')
         if d.front <= EMERGENCY_DISTANCE_M + 1e-6:
             return self.pause('정면 30cm 이하: 장애물이 멀어지면 자동 재개')
-        if min(d.left, d.right) <= BODY_CLEARANCE_M:
-            return self.pause('차량 측면 25cm 이하: 공간 확보 시 자동 재개')
         if self.state in ('WAIT', 'PAUSED'):
             self.state = 'CRUISE'
             self.reason = ''
@@ -215,8 +212,8 @@ class AvoidController:
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--drive', action='store_true', help='실제 PWM 출력')
-    parser.add_argument('--left-us', type=int, default=1880, help='좌회전 펄스(us), 기본1880')
-    parser.add_argument('--right-us', type=int, default=1400, help='우회전 펄스(us), 기본1400')
+    parser.add_argument('--left-us', type=int, default=1400, help='좌회전 펄스(us), 기본1400')
+    parser.add_argument('--right-us', type=int, default=1880, help='우회전 펄스(us), 기본1880')
     parser.add_argument(
         '--steering-test',
         action='store_true',

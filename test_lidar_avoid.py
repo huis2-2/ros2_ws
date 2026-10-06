@@ -18,6 +18,15 @@ class AvoidControllerTests(unittest.TestCase):
         )
         self.assertEqual(command, 'STRAIGHT')
 
+    def test_clear_front_ignores_close_side_and_keeps_driving(self):
+        controller = AvoidController()
+        command = controller.update(
+            Distances(2.0, 0.10, 0.10),
+            0.0,
+        )
+        self.assertEqual(command, 'STRAIGHT')
+        self.assertEqual(controller.state, 'CRUISE')
+
     def test_completes_left_then_right_avoidance(self):
         controller = AvoidController()
         obstacle = Distances(0.70, 1.50, 0.80)
@@ -81,10 +90,10 @@ class DriveHardwareTests(unittest.TestCase):
         hardware.current_steering_us = 1640
 
         with patch('lidar_avoid.set_pwm_us') as set_pwm:
-            hardware.set_steering(1880)
-            set_pwm.assert_called_once_with(hardware.bus, STEERING_CH, 1880)
+            hardware.set_steering(1400)
+            set_pwm.assert_called_once_with(hardware.bus, STEERING_CH, 1400)
 
-            hardware.set_steering(1880)
+            hardware.set_steering(1400)
             set_pwm.assert_called_once()
 
 
