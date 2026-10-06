@@ -74,15 +74,10 @@ class AvoidControllerTests(unittest.TestCase):
         self.assertEqual(command, 'LEFT')
         self.assertNotEqual(controller.state, 'PAUSED')
 
-    def test_emergency_stop_resumes_when_obstacle_clears(self):
+    def test_close_obstacle_keeps_driving_and_steering(self):
         controller = AvoidController()
         self.assertEqual(
-            controller.update(Distances(0.30, 1.0, 1.0), 0.0),
-            'STOP',
-        )
-        self.assertEqual(controller.state, 'PAUSED')
-        self.assertEqual(
-            controller.update(Distances(0.70, 1.0, 0.8), 1.0),
+            controller.update(Distances(0.10, 1.0, 0.8), 0.0),
             'LEFT',
         )
         self.assertEqual(controller.state, 'TURN_OUT')

@@ -22,7 +22,6 @@ SCAN_TIMEOUT_SEC = 0.5
 # 모두 LiDAR 원점에서 잰 거리. 차체 앞끝 기준 거리가 아님.
 AVOID_DISTANCE_M = 0.80
 CLEAR_DISTANCE_M = 0.95
-EMERGENCY_DISTANCE_M = 0.30
 DIRECTION_SWITCH_MARGIN_M = 0.15
 MIN_TURN_SEC = 0.40
 CLEAR_SCANS = 3
@@ -164,8 +163,6 @@ class AvoidController:
     def update(self, d, now):
         if d is None:
             return self.pause('정면/좌/우 구간의 유효 측정 부족')
-        if d.front <= EMERGENCY_DISTANCE_M + 1e-6:
-            return self.pause('정면 30cm 이하: 장애물이 멀어지면 자동 재개')
         if self.state in ('WAIT', 'PAUSED'):
             self.state = 'CRUISE'
             self.reason = ''
@@ -243,12 +240,12 @@ def main():
             self.timer = self.create_timer(0.05, self.watchdog)
             self.get_logger().info('실제 주행' if hardware else '판단 로그 시험: PWM 출력 없음')
             self.get_logger().info(
-                '감지 기준: 전방 0.80m 회피, 0.30m 급정지, '
-                '좌우 중 더 넓은 통로 선택'
+                '감지 기준: 전방 0.80m 회피, 좌우 중 더 넓은 통로 선택, '
+                '거리 정지 없음'
             )
             self.get_logger().info(
                 '상태 표시: STRAIGHT=직진, LEFT/RIGHT=회피, '
-                'PAUSED=장애물이 멀어질 때까지 일시 정지'
+                'PAUSED=LiDAR 데이터 정상 복구 대기'
             )
 
         def apply(self, command):

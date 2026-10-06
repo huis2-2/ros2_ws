@@ -67,7 +67,7 @@ else
     echo "조향: 왼쪽 ${STEERING_LEFT_US} us, 오른쪽 ${STEERING_RIGHT_US} us"
 fi
 
-echo "감지 기준: 회피 0.80 m, 급정지 0.30 m, 좌우 중 넓은 쪽 선택"
+echo "감지 기준: 회피 0.80 m, 거리 정지 없음, 좌우 중 넓은 쪽 선택"
 "${WORKSPACE_DIR}/lidar_avoid.py" "${avoidance_args[@]}" &
 avoidance_pid=$!
 
