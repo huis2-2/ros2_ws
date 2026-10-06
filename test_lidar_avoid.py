@@ -27,7 +27,7 @@ class AvoidControllerTests(unittest.TestCase):
         self.assertEqual(command, 'STRAIGHT')
         self.assertEqual(controller.state, 'CRUISE')
 
-    def test_completes_left_then_right_avoidance(self):
+    def test_centers_and_drives_straight_when_obstacle_clears(self):
         controller = AvoidController()
         obstacle = Distances(0.70, 1.50, 0.80)
         clear = Distances(1.20, 1.50, 1.50)
@@ -35,8 +35,8 @@ class AvoidControllerTests(unittest.TestCase):
         self.assertEqual(controller.update(obstacle, 0.00), 'LEFT')
         self.assertEqual(controller.update(clear, 0.40), 'LEFT')
         self.assertEqual(controller.update(clear, 0.50), 'LEFT')
-        self.assertEqual(controller.update(clear, 0.60), 'RIGHT')
-        self.assertEqual(controller.update(clear, 1.30), 'STRAIGHT')
+        self.assertEqual(controller.update(clear, 0.60), 'STRAIGHT')
+        self.assertEqual(controller.state, 'CRUISE')
 
     def test_keeps_avoiding_after_old_turn_timeout(self):
         controller = AvoidController()

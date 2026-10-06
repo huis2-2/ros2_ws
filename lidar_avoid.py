@@ -24,7 +24,7 @@ AVOID_DISTANCE_M = 0.80
 CLEAR_DISTANCE_M = 0.95
 EMERGENCY_DISTANCE_M = 0.30
 DIRECTION_SWITCH_MARGIN_M = 0.15
-MIN_TURN_SEC, MAX_ALIGN_SEC = 0.40, 1.50
+MIN_TURN_SEC = 0.40
 CLEAR_SCANS = 3
 MODE1, PRESCALE, LED0_ON_L = 0x00, 0xFE, 0x06
 
@@ -153,7 +153,6 @@ class AvoidController:
         self.state = 'WAIT'
         self.direction = None
         self.phase_time = 0.0
-        self.turn_duration = 0.0
         self.clear_count = 0
         self.reason = ''
 
@@ -187,22 +186,11 @@ class AvoidController:
             elapsed = now - self.phase_time
             self.clear_count = self.clear_count + 1 if d.front >= CLEAR_DISTANCE_M else 0
             if elapsed >= MIN_TURN_SEC and self.clear_count >= CLEAR_SCANS:
-                self.turn_duration = min(elapsed, MAX_ALIGN_SEC)
-                self.state, self.phase_time = 'ALIGN', now
-                return self.opposite()
+                self.state, self.direction = 'CRUISE', None
+                return 'STRAIGHT'
             # Keep avoiding while the chosen corridor remains open. There is
             # intentionally no time limit; distance checks above remain active.
             return self.direction
-        if d.front <= AVOID_DISTANCE_M:
-            # A new obstacle appeared while aligning. Choose a fresh avoidance
-            # direction rather than treating this as a permanent failure.
-            self.state, self.direction = 'CRUISE', None
-            return self.update(d, now)
-        if self.state == 'ALIGN':
-            if now - self.phase_time >= self.turn_duration:
-                self.state = 'CRUISE'
-                return 'STRAIGHT'
-            return self.opposite()
         return self.pause('알 수 없는 상태')
 
     def opposite(self):
