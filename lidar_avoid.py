@@ -26,7 +26,6 @@ EMERGENCY_DISTANCE_M = 0.30
 BODY_CLEARANCE_M = 0.25
 DIRECTION_SWITCH_MARGIN_M = 0.15
 MIN_TURN_SEC, MAX_ALIGN_SEC = 0.40, 1.50
-STEERING_SETTLE_SEC = 0.20
 CLEAR_SCANS = 3
 MODE1, PRESCALE, LED0_ON_L = 0x00, 0xFE, 0x06
 
@@ -149,7 +148,7 @@ class Distances:
 
 
 class AvoidController:
-    """ROS/하드웨어와 분리한 상태기계. 위험 정지는 재실행 전까지 유지."""
+    """ROS/하드웨어와 분리한 자동 복구 회피 상태기계."""
 
     def __init__(self):
         self.state = 'WAIT'
@@ -159,45 +158,41 @@ class AvoidController:
         self.clear_count = 0
         self.reason = ''
 
-    def halt(self, reason):
-        self.state, self.reason = 'HALT', reason
+    def pause(self, reason):
+        self.state, self.reason = 'PAUSED', reason
         return 'STOP'
 
     def update(self, d, now):
-        if self.state == 'HALT':
-            return 'STOP'
         if d is None:
-            return self.halt('정면/좌/우 구간의 유효 측정 부족')
+            return self.pause('정면/좌/우 구간의 유효 측정 부족')
         if d.front <= EMERGENCY_DISTANCE_M + 1e-6:
-            return self.halt('정면 30cm 이하')
+            return self.pause('정면 30cm 이하: 장애물이 멀어지면 자동 재개')
         if min(d.left, d.right) <= BODY_CLEARANCE_M:
-            return self.halt('차량 측면 가까이에 장애물')
-        if self.state in ('WAIT', 'CRUISE'):
+            return self.pause('차량 측면 25cm 이하: 공간 확보 시 자동 재개')
+        if self.state in ('WAIT', 'PAUSED'):
+            self.state = 'CRUISE'
+            self.reason = ''
+        if self.state == 'CRUISE':
             if d.front > AVOID_DISTANCE_M:
-                self.state = 'CRUISE'
                 return 'STRAIGHT'
             self.direction = 'LEFT' if d.left >= d.right else 'RIGHT'
-            self.state, self.phase_time = 'PREPARE', now
-            return 'STOP_' + self.direction
+            self.state, self.phase_time = 'TURN_OUT', now
+            self.clear_count = 0
+            return self.direction
         chosen = d.left if self.direction == 'LEFT' else d.right
         other = d.right if self.direction == 'LEFT' else d.left
         if other >= chosen + DIRECTION_SWITCH_MARGIN_M:
-            # Stop briefly to settle the steering before changing direction.
             self.direction = self.opposite()
-            self.state, self.phase_time = 'PREPARE', now
-            return 'STOP_' + self.direction
-        if self.state == 'PREPARE':
-            if now - self.phase_time < STEERING_SETTLE_SEC:
-                return 'STOP_' + self.direction
             self.state, self.phase_time = 'TURN_OUT', now
             self.clear_count = 0
+            return self.direction
         if self.state == 'TURN_OUT':
             elapsed = now - self.phase_time
             self.clear_count = self.clear_count + 1 if d.front >= CLEAR_DISTANCE_M else 0
             if elapsed >= MIN_TURN_SEC and self.clear_count >= CLEAR_SCANS:
                 self.turn_duration = min(elapsed, MAX_ALIGN_SEC)
-                self.state, self.phase_time = 'COUNTER_PREPARE', now
-                return 'STOP_' + self.opposite()
+                self.state, self.phase_time = 'ALIGN', now
+                return self.opposite()
             # Keep avoiding while the chosen corridor remains open. There is
             # intentionally no time limit; distance checks above remain active.
             return self.direction
@@ -206,16 +201,12 @@ class AvoidController:
             # direction rather than treating this as a permanent failure.
             self.state, self.direction = 'CRUISE', None
             return self.update(d, now)
-        if self.state == 'COUNTER_PREPARE':
-            if now - self.phase_time < STEERING_SETTLE_SEC:
-                return 'STOP_' + self.opposite()
-            self.state, self.phase_time = 'ALIGN', now
         if self.state == 'ALIGN':
             if now - self.phase_time >= self.turn_duration:
                 self.state = 'CRUISE'
                 return 'STRAIGHT'
             return self.opposite()
-        return self.halt('알 수 없는 상태')
+        return self.pause('알 수 없는 상태')
 
     def opposite(self):
         return 'RIGHT' if self.direction == 'LEFT' else 'LEFT'
@@ -271,7 +262,7 @@ def main():
             )
             self.get_logger().info(
                 '상태 표시: STRAIGHT=직진, LEFT/RIGHT=회피, '
-                'HALT=안전 정지'
+                'PAUSED=장애물이 멀어질 때까지 일시 정지'
             )
 
         def apply(self, command):
@@ -309,7 +300,9 @@ def main():
             ros_now = self.get_clock().now().nanoseconds / 1e9
             age = ros_now - stamp
             if stamp <= 0 or age > SCAN_TIMEOUT_SEC or age < -0.1:
-                command = self.control.halt('스캔 타임스탬프가 없거나 오래됨/시계 불일치')
+                command = self.control.pause(
+                    '스캔 타임스탬프가 없거나 오래됨/시계 불일치'
+                )
                 self.apply(command)
                 self.report(command)
                 return
@@ -330,7 +323,7 @@ def main():
                     self.last_log_time = now
                 return
             if time.monotonic() - self.last_scan_time > SCAN_TIMEOUT_SEC:
-                command = self.control.halt('LiDAR 데이터 0.5초 이상 끊김')
+                command = self.control.pause('LiDAR 데이터 0.5초 이상 끊김')
                 self.apply(command)
                 self.report(command)
 
