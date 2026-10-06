@@ -79,6 +79,7 @@ class DriveHardware:
         if self.bus is not None and us != self.current_steering_us:
             set_pwm_us(self.bus, STEERING_CH, us)
             self.current_steering_us = us
+            print(f'PCA9685 조향 출력: CH{STEERING_CH}, {us} us', flush=True)
 
     def stop(self):
         self.set_speed(NEUTRAL_US)
@@ -223,9 +224,16 @@ class AvoidController:
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--drive', action='store_true', help='실제 PWM 출력')
-    parser.add_argument('--left-us', type=int, default=1800, help='좌회전 펄스(us), 기본1800')
+    parser.add_argument('--left-us', type=int, default=1880, help='좌회전 펄스(us), 기본1880')
     parser.add_argument('--right-us', type=int, default=1400, help='우회전 펄스(us), 기본1400')
+    parser.add_argument(
+        '--steering-test',
+        action='store_true',
+        help='ESC 중립 상태에서 좌/우/중앙 조향만 시험하고 종료',
+    )
     opts, ros_args = parser.parse_known_args()
+    if opts.steering_test and not opts.drive:
+        parser.error('--steering-test에는 실제 PWM 출력을 위한 --drive가 필요합니다')
     if opts.drive:
         if opts.left_us is None or opts.right_us is None:
             parser.error('--drive에는 --left-us와 --right-us가 필요합니다')
@@ -333,6 +341,16 @@ def main():
             hardware = DriveHardware()
             print('ESC 중립 안정화 3초')
             time.sleep(3.0)
+            if opts.steering_test:
+                for label, pulse_us in (
+                    ('왼쪽', opts.left_us),
+                    ('오른쪽', opts.right_us),
+                    ('중앙', STEERING_CENTER_US),
+                ):
+                    print(f'조향 시험 {label}: {pulse_us} us')
+                    hardware.set_steering(pulse_us)
+                    time.sleep(1.0)
+                return 0
         rclpy.init(args=ros_args)
         initialized = True
         node = LidarAvoidDrive(hardware)

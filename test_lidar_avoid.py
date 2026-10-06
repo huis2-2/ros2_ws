@@ -3,8 +3,9 @@
 
 import math
 import unittest
+from unittest.mock import patch
 
-from lidar_avoid import AvoidController, Distances
+from lidar_avoid import AvoidController, Distances, DriveHardware, STEERING_CH
 
 
 class AvoidControllerTests(unittest.TestCase):
@@ -72,6 +73,21 @@ class AvoidControllerTests(unittest.TestCase):
             'STOP',
         )
         self.assertEqual(controller.state, 'HALT')
+
+
+class DriveHardwareTests(unittest.TestCase):
+
+    def test_steering_command_writes_channel_nine(self):
+        hardware = DriveHardware.__new__(DriveHardware)
+        hardware.bus = object()
+        hardware.current_steering_us = 1640
+
+        with patch('lidar_avoid.set_pwm_us') as set_pwm:
+            hardware.set_steering(1880)
+            set_pwm.assert_called_once_with(hardware.bus, STEERING_CH, 1880)
+
+            hardware.set_steering(1880)
+            set_pwm.assert_called_once()
 
 
 if __name__ == '__main__':
