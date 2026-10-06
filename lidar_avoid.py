@@ -156,16 +156,18 @@ class AvoidController:
         self.clear_count = 0
         self.reason = ''
 
-    def pause(self, reason):
-        self.state, self.reason = 'PAUSED', reason
-        return 'STOP'
+    def drive_without_scan(self, reason):
+        self.state = 'CRUISE'
+        self.direction = None
+        self.reason = reason
+        return 'STRAIGHT'
 
     def update(self, d, now):
         if d is None:
-            return self.pause('정면/좌/우 구간의 유효 측정 부족')
-        if self.state in ('WAIT', 'PAUSED'):
+            return self.drive_without_scan('유효 거리 부족: 직진 유지')
+        self.reason = ''
+        if self.state == 'WAIT':
             self.state = 'CRUISE'
-            self.reason = ''
         if self.state == 'CRUISE':
             if d.front > AVOID_DISTANCE_M:
                 return 'STRAIGHT'
@@ -189,7 +191,7 @@ class AvoidController:
             # Keep avoiding while the chosen corridor remains open. There is
             # intentionally no time limit; distance checks above remain active.
             return self.direction
-        return self.pause('알 수 없는 상태')
+        return self.drive_without_scan('알 수 없는 상태: 직진 유지')
 
     def opposite(self):
         return 'RIGHT' if self.direction == 'LEFT' else 'LEFT'
@@ -244,8 +246,8 @@ def main():
                 '거리 정지 없음'
             )
             self.get_logger().info(
-                '상태 표시: STRAIGHT=직진, LEFT/RIGHT=회피, '
-                'PAUSED=LiDAR 데이터 정상 복구 대기'
+                '상태 표시: STRAIGHT=직진, LEFT/RIGHT=회피; '
+                'LiDAR 오류/단절에서도 STRAIGHT 유지'
             )
 
         def apply(self, command):
@@ -284,8 +286,8 @@ def main():
             ros_now = self.get_clock().now().nanoseconds / 1e9
             age = ros_now - stamp
             if stamp <= 0 or age > SCAN_TIMEOUT_SEC or age < -0.1:
-                command = self.control.pause(
-                    '스캔 타임스탬프가 없거나 오래됨/시계 불일치'
+                command = self.control.drive_without_scan(
+                    '스캔 시각 오류: 직진 유지'
                 )
                 self.apply(command)
                 self.report(command)
@@ -300,14 +302,16 @@ def main():
 
         def watchdog(self):
             if self.last_scan_time is None:
-                self.apply('STOP')
-                now = time.monotonic()
-                if now - self.last_log_time >= 1.0:
-                    self.get_logger().warning('/scan 대기 중: LiDAR 드라이버를 확인하세요')
-                    self.last_log_time = now
+                command = self.control.drive_without_scan(
+                    '/scan 대기 중: 직진 유지'
+                )
+                self.apply(command)
+                self.report(command)
                 return
             if time.monotonic() - self.last_scan_time > SCAN_TIMEOUT_SEC:
-                command = self.control.pause('LiDAR 데이터 0.5초 이상 끊김')
+                command = self.control.drive_without_scan(
+                    'LiDAR 데이터 0.5초 이상 끊김: 직진 유지'
+                )
                 self.apply(command)
                 self.report(command)
 

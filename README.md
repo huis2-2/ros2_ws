@@ -13,7 +13,7 @@ Jetson 기반 소형 차량에서 ROS 2와 Slamtec LiDAR를 사용해 전방 장
 - 회피 및 중앙 조향 복귀 중 별도의 중립 대기 없이 계속 주행
 - 전방에 장애물이 없으면 측면 거리와 관계없이 중앙 조향으로 계속 직진
 - 장애물 거리로 정지하지 않고 좌우 회피 조향과 주행을 동시에 유지
-- `/scan` 데이터 오류 또는 0.5초 이상 단절 때만 안전 정지
+- `/scan` 데이터 오류·단절·시작 전에도 정지하지 않고 중앙 조향으로 계속 직진
 - 주행 속도: PCA9685 채널 8에 1565 us
 - 조향: 왼쪽 1880 us, 중앙 1640 us, 오른쪽 1400 us
 - `LEFT`, `RIGHT`, `STRAIGHT` 상태에서는 조향 중에도 주행 1565 us 유지
@@ -25,7 +25,7 @@ cd ~/ros2_ws
 ./run_lidar_avoidance_rviz.sh
 ```
 
-실제 구동 전에 LiDAR와 판단만 확인하려면 다음처럼 실행합니다. RViz에 `/scan`이 표시되고 터미널에 `앞`, `좌`, `우` 거리와 `STRAIGHT`, `LEFT`, `RIGHT`, `PAUSED` 상태가 출력됩니다.
+실제 구동 전에 LiDAR와 판단만 확인하려면 다음처럼 실행합니다. RViz에 `/scan`이 표시되고 터미널에 `앞`, `좌`, `우` 거리와 `STRAIGHT`, `LEFT`, `RIGHT` 상태가 출력됩니다.
 
 ```bash
 DRY_RUN=1 ./run_lidar_avoidance_rviz.sh

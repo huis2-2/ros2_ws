@@ -24,6 +24,12 @@ class AvoidControllerTests(unittest.TestCase):
         )
         self.assertEqual(command, 'STRAIGHT')
 
+    def test_invalid_distances_keep_driving_straight(self):
+        controller = AvoidController()
+        command = controller.update(None, 0.0)
+        self.assertEqual(command, 'STRAIGHT')
+        self.assertEqual(controller.state, 'CRUISE')
+
     def test_clear_front_ignores_close_side_and_keeps_driving(self):
         controller = AvoidController()
         command = controller.update(
@@ -51,7 +57,7 @@ class AvoidControllerTests(unittest.TestCase):
         self.assertEqual(controller.update(obstacle, 0.00), 'LEFT')
         self.assertEqual(controller.update(obstacle, 2.00), 'LEFT')
         self.assertEqual(controller.update(obstacle, 10.00), 'LEFT')
-        self.assertNotEqual(controller.state, 'PAUSED')
+        self.assertEqual(controller.state, 'TURN_OUT')
 
     def test_reselects_direction_if_corridor_closes(self):
         controller = AvoidController()
@@ -63,7 +69,7 @@ class AvoidControllerTests(unittest.TestCase):
             controller.update(Distances(0.70, 0.40, 1.20), 0.21),
             'RIGHT',
         )
-        self.assertNotEqual(controller.state, 'PAUSED')
+        self.assertEqual(controller.state, 'TURN_OUT')
 
     def test_chooses_wider_side_below_old_clearance_limit(self):
         controller = AvoidController()
@@ -72,7 +78,7 @@ class AvoidControllerTests(unittest.TestCase):
             0.0,
         )
         self.assertEqual(command, 'LEFT')
-        self.assertNotEqual(controller.state, 'PAUSED')
+        self.assertEqual(controller.state, 'TURN_OUT')
 
     def test_close_obstacle_keeps_driving_and_steering(self):
         controller = AvoidController()
