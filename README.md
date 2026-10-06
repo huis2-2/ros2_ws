@@ -32,6 +32,19 @@ source install/setup.bash
 python3 lidar_obstacle_avoidance.py
 ```
 
+`lidar_avoid.py`는 시간 기반 S자 회피를 시험하는 별도 코드입니다. 기본 실행은
+PWM을 출력하지 않고 판단 로그만 표시하며, 실제 구동은 검증된 조향값과 함께
+`--drive`를 명시해야 합니다.
+
+```bash
+source /opt/ros/jazzy/setup.bash
+source ~/ros2_ws/install/setup.bash
+./lidar_avoid.py
+
+# 바퀴를 띄우고 조향 방향과 중립값을 확인한 뒤에만 실행
+./lidar_avoid.py --drive --left-us 1800 --right-us 1400
+```
+
 ## 핵심 동작
 
 메인 실행 파일은 `run_lidar_stop_rviz.sh`입니다. 이 스크립트는 다음 프로그램을 함께 실행합니다.
@@ -77,6 +90,7 @@ python3 lidar_obstacle_avoidance.py
 | `lidar_obstacle_avoidance.py` | 전방 장애물을 감지해 여유가 큰 좌우 통로로 저속 회피 |
 | `lidar_avoidance_logic.py` | 하드웨어와 분리된 LiDAR 구간 분석 및 회피 상태 로직 |
 | `run_lidar_avoidance_rviz.sh` | Slamtec C1, RViz, 장애물 회피 코드를 한 번에 실행 |
+| `lidar_avoid.py` | 기본은 판단 로그만 출력하는 시간 기반 S자 회피 시험 코드 |
 | `lidar_stop_drive.py` | `/scan`을 구독하면서 장애물에 정지하고 장애물이 사라지면 자동 재출발 |
 | `run_lidar_stop_rviz.sh` | Slamtec C1, RViz, LiDAR 주행 코드를 한 번에 실행하고 함께 종료 |
 | `lidar_distance_monitor.py` | 주행 없이 정면 최근접 장애물 거리를 1초마다 출력 |
