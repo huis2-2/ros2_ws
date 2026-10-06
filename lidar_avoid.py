@@ -234,6 +234,7 @@ def main():
             parser.error('좌우는 1000~2000us 안에서 중앙1640us의 서로 반대편 값이어야 합니다')
     try:
         import rclpy
+        from rclpy.executors import ExternalShutdownException
         from rclpy.node import Node
         from rclpy.qos import qos_profile_sensor_data
         from sensor_msgs.msg import LaserScan
@@ -255,6 +256,14 @@ def main():
                                                 self.scan_callback, qos_profile_sensor_data)
             self.timer = self.create_timer(0.05, self.watchdog)
             self.get_logger().info('실제 주행' if hardware else '판단 로그 시험: PWM 출력 없음')
+            self.get_logger().info(
+                '감지 기준: 전방 0.80m 회피, 0.30m 급정지, '
+                '좌우 0.60m 이상 통로 선택'
+            )
+            self.get_logger().info(
+                '상태 표시: STRAIGHT=직진, LEFT/RIGHT=회피, '
+                'HALT=안전 정지'
+            )
 
         def apply(self, command):
             if self.hardware is None:
@@ -306,6 +315,10 @@ def main():
         def watchdog(self):
             if self.last_scan_time is None:
                 self.apply('STOP')
+                now = time.monotonic()
+                if now - self.last_log_time >= 1.0:
+                    self.get_logger().warning('/scan 대기 중: LiDAR 드라이버를 확인하세요')
+                    self.last_log_time = now
                 return
             if time.monotonic() - self.last_scan_time > SCAN_TIMEOUT_SEC:
                 command = self.control.halt('LiDAR 데이터 0.5초 이상 끊김')
@@ -323,7 +336,7 @@ def main():
         initialized = True
         node = LidarAvoidDrive(hardware)
         rclpy.spin(node)
-    except KeyboardInterrupt:
+    except (KeyboardInterrupt, ExternalShutdownException):
         print('정지 요청')
     except Exception as exc:
         print(f'실행 오류: {exc}')

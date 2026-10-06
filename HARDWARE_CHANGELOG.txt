@@ -153,3 +153,10 @@
   1565 us 직진으로 복귀한다.
 - 전방 0.25 m 이내, 양쪽 통로 막힘, 유효 스캔 오류, 0.5초 스캔 단절에는
   ESC 중립 1500 us로 안전 정지한다.
+
+2026-10-06 (LiDAR/RViz/S자 회피 통합 실행)
+- run_lidar_avoidance_rviz.sh가 Slamtec C1, RViz와 함께 lidar_avoid.py의
+  시간 기반 S자 회피를 실행하도록 연결했다.
+- 기본 통합 실행은 실제 PWM을 출력하고, DRY_RUN=1에서는 PWM 없이 전방·좌·우
+  거리와 STRAIGHT/LEFT/RIGHT/HALT 판단만 확인한다.
+- 단독 실행에서 /scan이 없을 때 1초마다 LiDAR 드라이버 확인 경고를 출력한다.

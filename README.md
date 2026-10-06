@@ -4,17 +4,16 @@ Jetson 기반 소형 차량에서 ROS 2와 Slamtec LiDAR를 사용해 전방 장
 
 ## LiDAR 장애물 회피 주행
 
-`run_lidar_avoidance_rviz.sh`는 Slamtec C1, RViz, 장애물 회피 노드를 함께 실행합니다. 차량 전방은 장착 방향에 맞춰 LiDAR 180도를 사용합니다.
+`run_lidar_avoidance_rviz.sh`는 Slamtec C1, RViz, 시간 기반 S자 장애물 회피 노드를 함께 실행합니다. 차량 전방은 장착 방향에 맞춰 LiDAR 180도를 사용합니다. 장애물을 만나면 여유가 큰 쪽으로 먼저 조향하고, 전방이 확보되면 반대 방향으로 같은 시간 동안 조향해 자세를 맞춥니다.
 
-- 전방 0.70 m 이내: 좌우 25~75도 통로 중 여유가 큰 쪽으로 저속 회피
-- 전방 0.90 m 이상: 조향 중앙으로 복귀하고 직진
-- 전방 0.25 m 이내: 급정지
-- 좌우 통로 여유가 모두 0.45 m 미만: 정지
+- 전방 0.80 m 이내: 좌우 통로 중 0.60 m 이상 확보된 넓은 쪽으로 회피
+- 전방 0.95 m 이상이 연속 3회 확인되면 반대 조향으로 자세 정렬
+- 전방 0.30 m 이내: 급정지
+- 좌우 통로 여유가 모두 0.60 m 미만: 정지
 - `/scan` 데이터 오류 또는 0.5초 이상 단절: 안전 정지
-- 회피 속도: PCA9685 채널 8에 1545 us
-- 직진 속도: PCA9685 채널 8에 1565 us
-- 조향: 채널 9의 오른쪽 1400 us, 중앙 1640 us, 왼쪽 1880 us
-- 조향 목표가 바뀔 때는 바퀴가 목표 각도에 도달할 때까지 ESC 중립 유지
+- 주행 속도: PCA9685 채널 8에 1565 us
+- 조향: 채널 9의 오른쪽 1400 us, 중앙 1640 us, 왼쪽 1800 us
+- 조향 방향 전환 전 0.20초 동안 ESC 중립 유지
 
 처음에는 반드시 바퀴를 띄워 조향 방향과 ESC 진행 방향을 확인하세요. 확인 후 충분히 넓고 사람이 없는 저속 시험 공간에서 실행합니다.
 
@@ -23,13 +22,19 @@ cd ~/ros2_ws
 ./run_lidar_avoidance_rviz.sh
 ```
 
+실제 구동 전에 LiDAR와 판단만 확인하려면 다음처럼 실행합니다. RViz에 `/scan`이 표시되고 터미널에 `앞`, `좌`, `우` 거리와 `STRAIGHT`, `LEFT`, `RIGHT`, `HALT` 상태가 출력됩니다.
+
+```bash
+DRY_RUN=1 ./run_lidar_avoidance_rviz.sh
+```
+
 LiDAR 드라이버가 이미 실행 중이면 회피 코드만 실행할 수 있습니다.
 
 ```bash
 cd ~/ros2_ws
 source /opt/ros/jazzy/setup.bash
 source install/setup.bash
-python3 lidar_obstacle_avoidance.py
+./lidar_avoid.py --drive --left-us 1800 --right-us 1400
 ```
 
 `lidar_avoid.py`는 시간 기반 S자 회피를 시험하는 별도 코드입니다. 기본 실행은
@@ -89,7 +94,7 @@ source ~/ros2_ws/install/setup.bash
 | --- | --- |
 | `lidar_obstacle_avoidance.py` | 전방 장애물을 감지해 여유가 큰 좌우 통로로 저속 회피 |
 | `lidar_avoidance_logic.py` | 하드웨어와 분리된 LiDAR 구간 분석 및 회피 상태 로직 |
-| `run_lidar_avoidance_rviz.sh` | Slamtec C1, RViz, 장애물 회피 코드를 한 번에 실행 |
+| `run_lidar_avoidance_rviz.sh` | Slamtec C1, RViz, S자 장애물 회피 코드를 한 번에 실행 |
 | `lidar_avoid.py` | 기본은 판단 로그만 출력하는 시간 기반 S자 회피 시험 코드 |
 | `lidar_stop_drive.py` | `/scan`을 구독하면서 장애물에 정지하고 장애물이 사라지면 자동 재출발 |
 | `run_lidar_stop_rviz.sh` | Slamtec C1, RViz, LiDAR 주행 코드를 한 번에 실행하고 함께 종료 |
