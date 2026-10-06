@@ -2,6 +2,36 @@
 
 Jetson 기반 소형 차량에서 ROS 2와 Slamtec LiDAR를 사용해 전방 장애물을 감지하고, PCA9685를 통해 ESC를 제어하는 작업공간입니다. 카메라 영상 발행, PWM 상태 확인, 조향 및 구동 시험 코드도 함께 들어 있습니다.
 
+## LiDAR 장애물 회피 주행
+
+`run_lidar_avoidance_rviz.sh`는 Slamtec C1, RViz, 장애물 회피 노드를 함께 실행합니다. 차량 전방은 장착 방향에 맞춰 LiDAR 180도를 사용합니다.
+
+- 전방 0.70 m 이내: 좌우 25~75도 통로 중 여유가 큰 쪽으로 저속 회피
+- 전방 0.90 m 이상: 조향 중앙으로 복귀하고 직진
+- 전방 0.25 m 이내: 급정지
+- 좌우 통로 여유가 모두 0.45 m 미만: 정지
+- `/scan` 데이터 오류 또는 0.5초 이상 단절: 안전 정지
+- 회피 속도: PCA9685 채널 8에 1545 us
+- 직진 속도: PCA9685 채널 8에 1565 us
+- 조향: 채널 9의 오른쪽 1400 us, 중앙 1640 us, 왼쪽 1880 us
+- 조향 목표가 바뀔 때는 바퀴가 목표 각도에 도달할 때까지 ESC 중립 유지
+
+처음에는 반드시 바퀴를 띄워 조향 방향과 ESC 진행 방향을 확인하세요. 확인 후 충분히 넓고 사람이 없는 저속 시험 공간에서 실행합니다.
+
+```bash
+cd ~/ros2_ws
+./run_lidar_avoidance_rviz.sh
+```
+
+LiDAR 드라이버가 이미 실행 중이면 회피 코드만 실행할 수 있습니다.
+
+```bash
+cd ~/ros2_ws
+source /opt/ros/jazzy/setup.bash
+source install/setup.bash
+python3 lidar_obstacle_avoidance.py
+```
+
 ## 핵심 동작
 
 메인 실행 파일은 `run_lidar_stop_rviz.sh`입니다. 이 스크립트는 다음 프로그램을 함께 실행합니다.
@@ -44,6 +74,9 @@ Jetson 기반 소형 차량에서 ROS 2와 Slamtec LiDAR를 사용해 전방 장
 
 | 경로 | 역할 |
 | --- | --- |
+| `lidar_obstacle_avoidance.py` | 전방 장애물을 감지해 여유가 큰 좌우 통로로 저속 회피 |
+| `lidar_avoidance_logic.py` | 하드웨어와 분리된 LiDAR 구간 분석 및 회피 상태 로직 |
+| `run_lidar_avoidance_rviz.sh` | Slamtec C1, RViz, 장애물 회피 코드를 한 번에 실행 |
 | `lidar_stop_drive.py` | `/scan`을 구독하면서 장애물에 정지하고 장애물이 사라지면 자동 재출발 |
 | `run_lidar_stop_rviz.sh` | Slamtec C1, RViz, LiDAR 주행 코드를 한 번에 실행하고 함께 종료 |
 | `lidar_distance_monitor.py` | 주행 없이 정면 최근접 장애물 거리를 1초마다 출력 |
