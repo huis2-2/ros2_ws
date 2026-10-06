@@ -5,8 +5,8 @@ set -o pipefail
 WORKSPACE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LIDAR_BY_ID="/dev/serial/by-id/usb-Silicon_Labs_CP2102N_USB_to_UART_Bridge_Controller_12f6e4544f6eef1189d8e7c2c169b110-if00-port0"
 LIDAR_PORT="${LIDAR_PORT:-${LIDAR_BY_ID}}"
-STEERING_LEFT_US="${STEERING_LEFT_US:-1400}"
-STEERING_RIGHT_US="${STEERING_RIGHT_US:-1880}"
+STEERING_LEFT_US="${STEERING_LEFT_US:-1880}"
+STEERING_RIGHT_US="${STEERING_RIGHT_US:-1400}"
 DRY_RUN="${DRY_RUN:-0}"
 
 if [[ ! -e "${LIDAR_PORT}" ]]; then

@@ -15,7 +15,8 @@ Jetson 기반 소형 차량에서 ROS 2와 Slamtec LiDAR를 사용해 전방 장
 - 전방 0.30 m 이내: 일시 정지 후 공간 확보 시 자동 재개
 - `/scan` 데이터 오류 또는 0.5초 이상 단절: 안전 정지
 - 주행 속도: PCA9685 채널 8에 1565 us
-- 조향: 실제 차량 방향 보정값으로 왼쪽 1400 us, 중앙 1640 us, 오른쪽 1880 us
+- 조향: 왼쪽 1880 us, 중앙 1640 us, 오른쪽 1400 us
+- `LEFT`, `RIGHT`, `STRAIGHT` 상태에서는 조향 중에도 주행 1565 us 유지
 
 처음에는 반드시 바퀴를 띄워 조향 방향과 ESC 진행 방향을 확인하세요. 확인 후 충분히 넓고 사람이 없는 저속 시험 공간에서 실행합니다.
 
@@ -36,7 +37,7 @@ LiDAR 드라이버가 이미 실행 중이면 회피 코드만 실행할 수 있
 cd ~/ros2_ws
 source /opt/ros/jazzy/setup.bash
 source install/setup.bash
-./lidar_avoid.py --drive --left-us 1400 --right-us 1880
+./lidar_avoid.py --drive --left-us 1880 --right-us 1400
 ```
 
 `lidar_avoid.py`는 시간 기반 S자 회피를 시험하는 별도 코드입니다. 기본 실행은
@@ -49,7 +50,7 @@ source ~/ros2_ws/install/setup.bash
 ./lidar_avoid.py
 
 # 바퀴를 띄우고 조향 방향과 중립값을 확인한 뒤에만 실행
-./lidar_avoid.py --drive --left-us 1400 --right-us 1880
+./lidar_avoid.py --drive --left-us 1880 --right-us 1400
 ```
 
 거리 판단은 바뀌는데 바퀴 조향이 보이지 않으면 차량을 들어 올린 상태에서 다음

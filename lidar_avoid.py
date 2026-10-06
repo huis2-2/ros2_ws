@@ -72,6 +72,7 @@ class DriveHardware:
         if self.bus is not None and us != self.current_speed_us:
             set_pwm_us(self.bus, THROTTLE_CH, us)
             self.current_speed_us = us
+            print(f'PCA9685 속도 출력: CH{THROTTLE_CH}, {us} us', flush=True)
 
     def set_steering(self, us):
         if self.bus is not None and us != self.current_steering_us:
@@ -200,8 +201,8 @@ class AvoidController:
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--drive', action='store_true', help='실제 PWM 출력')
-    parser.add_argument('--left-us', type=int, default=1400, help='좌회전 펄스(us), 기본1400')
-    parser.add_argument('--right-us', type=int, default=1880, help='우회전 펄스(us), 기본1880')
+    parser.add_argument('--left-us', type=int, default=1880, help='좌회전 펄스(us), 기본1880')
+    parser.add_argument('--right-us', type=int, default=1400, help='우회전 펄스(us), 기본1400')
     parser.add_argument(
         '--steering-test',
         action='store_true',
@@ -253,17 +254,18 @@ def main():
         def apply(self, command):
             if self.hardware is None:
                 return
-            # 정지 명령은 조향 변경보다 ESC 중립을 먼저 출력한다.
-            if command.startswith('STOP'):
+            if command == 'STOP':
                 self.hardware.stop()
-            direction = command.replace('STOP_', '')
+                self.hardware.set_steering(STEERING_CENTER_US)
+                return
+
+            # LEFT, RIGHT, and STRAIGHT always retain forward drive output.
             steering = {
                 'LEFT': opts.left_us,
                 'RIGHT': opts.right_us,
-            }.get(direction, STEERING_CENTER_US)
+            }.get(command, STEERING_CENTER_US)
             self.hardware.set_steering(steering)
-            if not command.startswith('STOP'):
-                self.hardware.set_speed(DRIVE_SPEED_US)
+            self.hardware.set_speed(DRIVE_SPEED_US)
 
         def report(self, command, d=None):
             now = time.monotonic()

@@ -5,7 +5,13 @@ import math
 import unittest
 from unittest.mock import patch
 
-from lidar_avoid import AvoidController, Distances, DriveHardware, STEERING_CH
+from lidar_avoid import (
+    AvoidController,
+    Distances,
+    DriveHardware,
+    STEERING_CH,
+    THROTTLE_CH,
+)
 
 
 class AvoidControllerTests(unittest.TestCase):
@@ -90,11 +96,20 @@ class DriveHardwareTests(unittest.TestCase):
         hardware.current_steering_us = 1640
 
         with patch('lidar_avoid.set_pwm_us') as set_pwm:
-            hardware.set_steering(1400)
-            set_pwm.assert_called_once_with(hardware.bus, STEERING_CH, 1400)
+            hardware.set_steering(1880)
+            set_pwm.assert_called_once_with(hardware.bus, STEERING_CH, 1880)
 
-            hardware.set_steering(1400)
+            hardware.set_steering(1880)
             set_pwm.assert_called_once()
+
+    def test_drive_speed_writes_throttle_channel(self):
+        hardware = DriveHardware.__new__(DriveHardware)
+        hardware.bus = object()
+        hardware.current_speed_us = 1500
+
+        with patch('lidar_avoid.set_pwm_us') as set_pwm:
+            hardware.set_speed(1565)
+            set_pwm.assert_called_once_with(hardware.bus, THROTTLE_CH, 1565)
 
 
 if __name__ == '__main__':
