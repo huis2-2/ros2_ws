@@ -25,7 +25,7 @@ CLEAR_DISTANCE_M = 0.95
 EMERGENCY_DISTANCE_M = 0.30
 SIDE_CLEARANCE_M = 0.60
 BODY_CLEARANCE_M = 0.25
-MIN_TURN_SEC, MAX_TURN_SEC = 0.40, 1.50
+MIN_TURN_SEC, MAX_ALIGN_SEC = 0.40, 1.50
 STEERING_SETTLE_SEC = 0.20
 CLEAR_SCANS = 3
 MODE1, PRESCALE, LED0_ON_L = 0x00, 0xFE, 0x06
@@ -184,7 +184,10 @@ class AvoidController:
             return 'STOP_' + self.direction
         chosen = d.left if self.direction == 'LEFT' else d.right
         if chosen < SIDE_CLEARANCE_M:
-            return self.halt('선택한 회피 방향에 장애물')
+            # The original corridor closed. Re-evaluate both sides instead of
+            # stopping permanently; update() will still halt if neither opens.
+            self.state, self.direction = 'CRUISE', None
+            return self.update(d, now)
         if self.state == 'PREPARE':
             if now - self.phase_time < STEERING_SETTLE_SEC:
                 return 'STOP_' + self.direction
@@ -194,16 +197,19 @@ class AvoidController:
             elapsed = now - self.phase_time
             self.clear_count = self.clear_count + 1 if d.front >= CLEAR_DISTANCE_M else 0
             if elapsed >= MIN_TURN_SEC and self.clear_count >= CLEAR_SCANS:
-                self.turn_duration = elapsed
+                self.turn_duration = min(elapsed, MAX_ALIGN_SEC)
                 self.state, self.phase_time = 'COUNTER_PREPARE', now
                 return 'STOP_' + self.opposite()
-            if elapsed >= MAX_TURN_SEC:
-                return self.halt('최대 회전시간 안에 정면 공간 확보 실패')
+            # Keep avoiding while the chosen corridor remains open. There is
+            # intentionally no time limit; distance checks above remain active.
             return self.direction
         # 반대 조향의 바퀴 진행방향에도 공간이 있어야 한다.
         opposite_space = d.right if self.direction == 'LEFT' else d.left
         if opposite_space < SIDE_CLEARANCE_M or d.front <= AVOID_DISTANCE_M:
-            return self.halt('자세 정렬 방향/정면에 장애물')
+            # A new obstacle appeared while aligning. Choose a fresh avoidance
+            # direction rather than treating this as a permanent failure.
+            self.state, self.direction = 'CRUISE', None
+            return self.update(d, now)
         if self.state == 'COUNTER_PREPARE':
             if now - self.phase_time < STEERING_SETTLE_SEC:
                 return 'STOP_' + self.opposite()

@@ -30,6 +30,28 @@ class AvoidControllerTests(unittest.TestCase):
         self.assertEqual(controller.update(clear, 1.11), 'RIGHT')
         self.assertEqual(controller.update(clear, 1.90), 'STRAIGHT')
 
+    def test_keeps_avoiding_after_old_turn_timeout(self):
+        controller = AvoidController()
+        obstacle = Distances(0.70, 1.50, 0.80)
+
+        self.assertEqual(controller.update(obstacle, 0.00), 'STOP_LEFT')
+        self.assertEqual(controller.update(obstacle, 0.21), 'LEFT')
+        self.assertEqual(controller.update(obstacle, 2.00), 'LEFT')
+        self.assertEqual(controller.update(obstacle, 10.00), 'LEFT')
+        self.assertNotEqual(controller.state, 'HALT')
+
+    def test_reselects_direction_if_corridor_closes(self):
+        controller = AvoidController()
+        self.assertEqual(
+            controller.update(Distances(0.70, 1.50, 0.80), 0.00),
+            'STOP_LEFT',
+        )
+        self.assertEqual(
+            controller.update(Distances(0.70, 0.40, 1.20), 0.21),
+            'STOP_RIGHT',
+        )
+        self.assertNotEqual(controller.state, 'HALT')
+
     def test_emergency_stop_is_latched(self):
         controller = AvoidController()
         self.assertEqual(
