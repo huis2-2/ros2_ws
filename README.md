@@ -246,14 +246,17 @@ python3 lidar_distance_monitor.py
 ros2 run camera_node camera_node
 ```
 
-### 카메라 흰 차선 저속 주행
+### 카메라 흰색·노란색 차선 저속 주행
 
-`camera_lane_follow.py`는 `/camera/image_raw`에서 흰 차선을 검출하고, 기존
+`camera_lane_follow.py`는 `/camera/image_raw`에서 흰색과 노란색 차선을 검출하고, 기존
 실차 보정값인 속도 PCA9685 CH8과 조향 CH9를 사용합니다. 차선이 보일 때만
 3프레임 연속 감지를 확인한 뒤 기본 `1545 us`로 저속 주행하며 차선 또는 카메라
 영상을 잃으면 즉시 ESC 중립 `1500 us`, 조향 중앙 `1640 us`로 정지합니다.
 차선 위치 목표는 BEV 영상의 중앙이며, 위치 오차와 차선 기울기를 함께 사용해
 조향합니다.
+
+- 흰색 기본 HSV: lower `[0, 0, 255]`, upper `[0, 106, 255]`
+- 노란색 기본 HSV: lower `[19, 0, 197]`, upper `[64, 153, 255]`
 
 먼저 한 터미널에서 카메라 노드를 실행합니다.
 
@@ -273,9 +276,10 @@ python3 camera_lane_follow.py --show
 ```
 
 HSV 색상 범위를 직접 맞추려면 다음처럼 실행합니다. 별도의 `HSV controls` 창에서
-`H/S/V min`, `H/S/V max` 슬라이더를 움직이면 마스크에 즉시 반영됩니다. 창에
-정확한 lower/upper 값이 표시되며, 영상 창에서 `p` 키를 누르면 터미널에도 현재
-값이 출력됩니다. 색상 조절 중에는 `--drive`를 사용하지 마세요.
+흰색 `W H/S/V min/max`와 노란색 `Y H/S/V min/max` 슬라이더를 움직이면 두
+마스크를 합친 결과에 즉시 반영됩니다. 창에 두 색의 정확한 lower/upper 값이
+표시되며, 영상 창에서 `p` 키를 누르면 터미널에도 현재 값이 출력됩니다. 색상
+조절 중에는 `--drive`를 사용하지 마세요.
 
 ```bash
 python3 camera_lane_follow.py --hsv-tuner

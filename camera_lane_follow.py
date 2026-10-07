@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Follow a white lane from a ROS 2 camera image at low speed.
+"""Follow white and yellow lanes from a ROS 2 camera image at low speed.
 
 The default mode only reports the command it would send. Pass ``--drive``
 after checking the camera image and steering direction with the wheels raised.
@@ -47,8 +47,14 @@ MAX_ANGULAR = 3.20
 SMOOTH_ALPHA = 0.60
 MAX_DELTA_ANGULAR = 2.35
 
-DEFAULT_LOWER_HSV = (0, 0, 180)
-DEFAULT_UPPER_HSV = (180, 70, 255)
+WHITE_LOWER_HSV = (0, 0, 255)
+WHITE_UPPER_HSV = (0, 106, 255)
+YELLOW_LOWER_HSV = (19, 0, 197)
+YELLOW_UPPER_HSV = (64, 153, 255)
+DEFAULT_HSV_RANGES = (
+    (WHITE_LOWER_HSV, WHITE_UPPER_HSV),
+    (YELLOW_LOWER_HSV, YELLOW_UPPER_HSV),
+)
 HSV_CONTROL_WINDOW = 'HSV controls'
 
 
@@ -86,16 +92,18 @@ def bird_eye_view(image):
 
 def lane_color_mask(
     image,
-    lower_hsv=DEFAULT_LOWER_HSV,
-    upper_hsv=DEFAULT_UPPER_HSV,
+    hsv_ranges=DEFAULT_HSV_RANGES,
 ):
-    """Return a cleaned lower-road mask for the selected HSV range."""
+    """Return a cleaned lower-road mask for selected HSV ranges."""
     hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
-    mask = cv2.inRange(
-        hsv,
-        np.array(lower_hsv, dtype=np.uint8),
-        np.array(upper_hsv, dtype=np.uint8),
-    )
+    mask = np.zeros(hsv.shape[:2], dtype=np.uint8)
+    for lower_hsv, upper_hsv in hsv_ranges:
+        color_mask = cv2.inRange(
+            hsv,
+            np.array(lower_hsv, dtype=np.uint8),
+            np.array(upper_hsv, dtype=np.uint8),
+        )
+        mask = cv2.bitwise_or(mask, color_mask)
     height, width = mask.shape
     roi = np.zeros_like(mask)
     polygon = np.array([[
@@ -171,12 +179,11 @@ def calculate_lane_info(lines, image_height):
 
 def detect_lane(
     image,
-    lower_hsv=DEFAULT_LOWER_HSV,
-    upper_hsv=DEFAULT_UPPER_HSV,
+    hsv_ranges=DEFAULT_HSV_RANGES,
 ):
     """Detect the lane using the supplied code's HSV and Hough method."""
     bev = bird_eye_view(image)
-    mask = lane_color_mask(bev, lower_hsv, upper_hsv)
+    mask = lane_color_mask(bev, hsv_ranges)
     _, edges = detect_edges(mask)
     lines = detect_hough_lines(edges)
     center_x, angle_deg = calculate_lane_info(lines, image.shape[0])
@@ -421,7 +428,7 @@ def main(argv=None):
                 else '판단 로그 시험'
             )
             self.get_logger().info(
-                f'{mode}: {options.camera_topic}의 흰 차선을 기다립니다'
+                f'{mode}: {options.camera_topic}의 흰색/노란색 차선을 기다립니다'
             )
             self.get_logger().info(
                 f'차선 감지 시 속도 CH{THROTTLE_CH}={options.speed_us} us, '
@@ -434,16 +441,22 @@ def main(argv=None):
                 )
 
         def create_hsv_tuner(self):
-            """Create a separate six-slider HSV control window."""
+            """Create separate white and yellow HSV sliders."""
             cv2.namedWindow(HSV_CONTROL_WINDOW, cv2.WINDOW_NORMAL)
-            cv2.resizeWindow(HSV_CONTROL_WINDOW, 640, 330)
+            cv2.resizeWindow(HSV_CONTROL_WINDOW, 700, 620)
             values = (
-                ('H min', DEFAULT_LOWER_HSV[0], 180),
-                ('S min', DEFAULT_LOWER_HSV[1], 255),
-                ('V min', DEFAULT_LOWER_HSV[2], 255),
-                ('H max', DEFAULT_UPPER_HSV[0], 180),
-                ('S max', DEFAULT_UPPER_HSV[1], 255),
-                ('V max', DEFAULT_UPPER_HSV[2], 255),
+                ('W H min', WHITE_LOWER_HSV[0], 180),
+                ('W S min', WHITE_LOWER_HSV[1], 255),
+                ('W V min', WHITE_LOWER_HSV[2], 255),
+                ('W H max', WHITE_UPPER_HSV[0], 180),
+                ('W S max', WHITE_UPPER_HSV[1], 255),
+                ('W V max', WHITE_UPPER_HSV[2], 255),
+                ('Y H min', YELLOW_LOWER_HSV[0], 180),
+                ('Y S min', YELLOW_LOWER_HSV[1], 255),
+                ('Y V min', YELLOW_LOWER_HSV[2], 255),
+                ('Y H max', YELLOW_UPPER_HSV[0], 180),
+                ('Y S max', YELLOW_UPPER_HSV[1], 255),
+                ('Y V max', YELLOW_UPPER_HSV[2], 255),
             )
             for name, value, maximum in values:
                 cv2.createTrackbar(
@@ -454,26 +467,38 @@ def main(argv=None):
                     lambda _value: None,
                 )
 
-        def get_hsv_range(self):
-            """Read the current trackbar values or return white defaults."""
+        def get_hsv_ranges(self):
+            """Read both trackbar ranges or return calibrated defaults."""
             if not options.hsv_tuner:
-                return DEFAULT_LOWER_HSV, DEFAULT_UPPER_HSV
-            lower = tuple(
-                cv2.getTrackbarPos(name, HSV_CONTROL_WINDOW)
-                for name in ('H min', 'S min', 'V min')
+                return DEFAULT_HSV_RANGES
+            white_lower = tuple(
+                cv2.getTrackbarPos(f'W {name} min', HSV_CONTROL_WINDOW)
+                for name in ('H', 'S', 'V')
             )
-            upper = tuple(
-                cv2.getTrackbarPos(name, HSV_CONTROL_WINDOW)
-                for name in ('H max', 'S max', 'V max')
+            white_upper = tuple(
+                cv2.getTrackbarPos(f'W {name} max', HSV_CONTROL_WINDOW)
+                for name in ('H', 'S', 'V')
             )
-            return lower, upper
+            yellow_lower = tuple(
+                cv2.getTrackbarPos(f'Y {name} min', HSV_CONTROL_WINDOW)
+                for name in ('H', 'S', 'V')
+            )
+            yellow_upper = tuple(
+                cv2.getTrackbarPos(f'Y {name} max', HSV_CONTROL_WINDOW)
+                for name in ('H', 'S', 'V')
+            )
+            return (
+                (white_lower, white_upper),
+                (yellow_lower, yellow_upper),
+            )
 
-        def show_hsv_values(self, lower_hsv, upper_hsv):
-            """Render exact selected values inside the HSV control window."""
-            panel = np.zeros((130, 640, 3), dtype=np.uint8)
+        def show_hsv_values(self, hsv_ranges):
+            """Render both exact HSV ranges inside the control window."""
+            white_range, yellow_range = hsv_ranges
+            panel = np.zeros((190, 700, 3), dtype=np.uint8)
             cv2.putText(
                 panel,
-                f'LOWER HSV = {list(lower_hsv)}',
+                f'WHITE LOWER = {list(white_range[0])}',
                 (20, 38),
                 cv2.FONT_HERSHEY_SIMPLEX,
                 0.75,
@@ -482,7 +507,7 @@ def main(argv=None):
             )
             cv2.putText(
                 panel,
-                f'UPPER HSV = {list(upper_hsv)}',
+                f'WHITE UPPER = {list(white_range[1])}',
                 (20, 76),
                 cv2.FONT_HERSHEY_SIMPLEX,
                 0.75,
@@ -491,11 +516,29 @@ def main(argv=None):
             )
             cv2.putText(
                 panel,
-                'Press p to print values in the terminal',
+                f'YELLOW LOWER = {list(yellow_range[0])}',
                 (20, 112),
                 cv2.FONT_HERSHEY_SIMPLEX,
-                0.58,
+                0.75,
                 (0, 255, 255),
+                2,
+            )
+            cv2.putText(
+                panel,
+                f'YELLOW UPPER = {list(yellow_range[1])}',
+                (20, 150),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.75,
+                (0, 255, 255),
+                2,
+            )
+            cv2.putText(
+                panel,
+                'Press p to print all values',
+                (20, 180),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.52,
+                (255, 255, 255),
                 1,
             )
             cv2.imshow(HSV_CONTROL_WINDOW, panel)
@@ -527,11 +570,10 @@ def main(argv=None):
                     message,
                     desired_encoding='bgr8',
                 )
-                lower_hsv, upper_hsv = self.get_hsv_range()
+                hsv_ranges = self.get_hsv_ranges()
                 observation, bev, mask = detect_lane(
                     image,
-                    lower_hsv,
-                    upper_hsv,
+                    hsv_ranges,
                 )
             except Exception as exc:
                 self.controller.reset()
@@ -612,12 +654,15 @@ def main(argv=None):
                 cv2.imshow('lane follow', display)
                 cv2.imshow('lane color mask', mask)
                 if options.hsv_tuner:
-                    self.show_hsv_values(lower_hsv, upper_hsv)
+                    self.show_hsv_values(hsv_ranges)
                 key = cv2.waitKey(1) & 0xFF
                 if key == ord('p'):
+                    white_range, yellow_range = hsv_ranges
                     self.get_logger().info(
-                        f'현재 HSV: lower={list(lower_hsv)}, '
-                        f'upper={list(upper_hsv)}'
+                        f'현재 HSV: white lower={list(white_range[0])}, '
+                        f'upper={list(white_range[1])}; yellow '
+                        f'lower={list(yellow_range[0])}, '
+                        f'upper={list(yellow_range[1])}'
                     )
 
         def check_image_timeout(self):

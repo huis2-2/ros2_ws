@@ -39,21 +39,22 @@ class LaneDetectionTests(unittest.TestCase):
         self.assertEqual(int(mask[75, 320]), 0)
         self.assertEqual(int(mask[390, 320]), 255)
 
-    def test_white_mask_rejects_yellow(self):
-        """A saturated yellow marking must not be treated as a white lane."""
+    def test_default_ranges_select_calibrated_yellow(self):
+        """The supplied yellow calibration should be enabled by default."""
         image = np.zeros((480, 640, 3), dtype=np.uint8)
-        image[350:430, 300:340] = (0, 255, 255)
+        image[350:430, 300:340] = (100, 200, 220)
 
         mask = lane_color_mask(image)
 
-        self.assertEqual(int(np.count_nonzero(mask)), 0)
+        self.assertGreater(int(np.count_nonzero(mask)), 0)
 
-    def test_custom_hsv_range_can_select_yellow(self):
-        """A caller-selected HSV range should be applied to the lane mask."""
+    def test_custom_hsv_ranges_are_applied(self):
+        """Caller-selected HSV ranges should replace calibrated defaults."""
         image = np.zeros((480, 640, 3), dtype=np.uint8)
         image[350:430, 300:340] = (0, 255, 255)
 
-        mask = lane_color_mask(image, (18, 70, 70), (42, 255, 255))
+        ranges = (((18, 70, 70), (42, 255, 255)),)
+        mask = lane_color_mask(image, ranges)
 
         self.assertGreater(int(np.count_nonzero(mask)), 0)
 
