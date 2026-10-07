@@ -246,6 +246,40 @@ python3 lidar_distance_monitor.py
 ros2 run camera_node camera_node
 ```
 
+### 카메라 노란 차선 저속 주행
+
+`camera_lane_follow.py`는 `/camera/image_raw`에서 노란 차선을 검출하고, 기존
+실차 보정값인 속도 PCA9685 CH8과 조향 CH9를 사용합니다. 차선이 보일 때만
+3프레임 연속 감지를 확인한 뒤 기본 `1545 us`로 저속 주행하며 차선 또는 카메라
+영상을 잃으면 즉시 ESC 중립 `1500 us`, 조향 중앙 `1640 us`로 정지합니다.
+
+먼저 한 터미널에서 카메라 노드를 실행합니다.
+
+```bash
+source /opt/ros/jazzy/setup.bash
+source ~/ros2_ws/install/setup.bash
+ros2 run camera_node camera_node
+```
+
+다른 터미널에서 실제 PWM을 출력하지 않는 인식 시험을 실행합니다. `--show`를
+붙이면 BEV 차선 영상과 노란색 마스크를 확인할 수 있습니다.
+
+```bash
+cd ~/ros2_ws
+source /opt/ros/jazzy/setup.bash
+python3 camera_lane_follow.py --show
+```
+
+인식 위치와 좌우 조향 방향을 확인한 후, 처음에는 반드시 바퀴를 띄우고 실제
+저속 주행을 시험합니다.
+
+```bash
+python3 camera_lane_follow.py --drive --show
+```
+
+카메라 토픽과 속도는 각각 `--camera-topic`, `--speed-us`로 바꿀 수 있습니다.
+속도는 안전상 중립을 포함한 `1500~1565 us`만 허용합니다.
+
 ### PWM 상태 읽기
 
 세 sysfs PWM 경로의 duty 비율을 50 Hz로 읽어 `/pwm_duty`에 `[PWM1, PWM5, PWM7]` 순서로 발행합니다.
