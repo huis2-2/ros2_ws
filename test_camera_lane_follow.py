@@ -8,7 +8,7 @@ from camera_lane_follow import (
     STEERING_CENTER_US,
     calculate_lane_info,
     detect_edges,
-    white_lane_mask,
+    lane_color_mask,
 )
 
 import numpy as np
@@ -32,7 +32,7 @@ class LaneDetectionTests(unittest.TestCase):
         image[50:100, 300:340] = (255, 255, 255)
         image[350:430, 300:340] = (255, 255, 255)
 
-        mask = white_lane_mask(image)
+        mask = lane_color_mask(image)
 
         self.assertEqual(int(mask[75, 320]), 0)
         self.assertEqual(int(mask[390, 320]), 255)
@@ -42,9 +42,18 @@ class LaneDetectionTests(unittest.TestCase):
         image = np.zeros((480, 640, 3), dtype=np.uint8)
         image[350:430, 300:340] = (0, 255, 255)
 
-        mask = white_lane_mask(image)
+        mask = lane_color_mask(image)
 
         self.assertEqual(int(np.count_nonzero(mask)), 0)
+
+    def test_custom_hsv_range_can_select_yellow(self):
+        """A caller-selected HSV range should be applied to the lane mask."""
+        image = np.zeros((480, 640, 3), dtype=np.uint8)
+        image[350:430, 300:340] = (0, 255, 255)
+
+        mask = lane_color_mask(image, (18, 70, 70), (42, 255, 255))
+
+        self.assertGreater(int(np.count_nonzero(mask)), 0)
 
     def test_canny_edges_follow_white_mask_boundary(self):
         """Canny processing should retain the lower white stripe edges."""

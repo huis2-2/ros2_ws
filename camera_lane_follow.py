@@ -47,6 +47,10 @@ MAX_ANGULAR = 3.20
 SMOOTH_ALPHA = 0.60
 MAX_DELTA_ANGULAR = 2.35
 
+DEFAULT_LOWER_HSV = (0, 0, 180)
+DEFAULT_UPPER_HSV = (180, 70, 255)
+HSV_CONTROL_WINDOW = 'HSV controls'
+
 
 @dataclass
 class LaneObservation:
@@ -80,13 +84,17 @@ def bird_eye_view(image):
     return cv2.warpPerspective(image, matrix, (width, height))
 
 
-def white_lane_mask(image):
-    """Return a cleaned mask for the white lane in the lower road area."""
+def lane_color_mask(
+    image,
+    lower_hsv=DEFAULT_LOWER_HSV,
+    upper_hsv=DEFAULT_UPPER_HSV,
+):
+    """Return a cleaned lower-road mask for the selected HSV range."""
     hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
     mask = cv2.inRange(
         hsv,
-        np.array([0, 0, 180], dtype=np.uint8),
-        np.array([180, 70, 255], dtype=np.uint8),
+        np.array(lower_hsv, dtype=np.uint8),
+        np.array(upper_hsv, dtype=np.uint8),
     )
     height, width = mask.shape
     roi = np.zeros_like(mask)
@@ -161,10 +169,14 @@ def calculate_lane_info(lines, image_height):
     return float(np.mean(x_values)), float(np.mean(angles))
 
 
-def detect_white_lane(image):
+def detect_lane(
+    image,
+    lower_hsv=DEFAULT_LOWER_HSV,
+    upper_hsv=DEFAULT_UPPER_HSV,
+):
     """Detect the lane using the supplied code's HSV and Hough method."""
     bev = bird_eye_view(image)
-    mask = white_lane_mask(bev)
+    mask = lane_color_mask(bev, lower_hsv, upper_hsv)
     _, edges = detect_edges(mask)
     lines = detect_hough_lines(edges)
     center_x, angle_deg = calculate_lane_info(lines, image.shape[0])
@@ -332,6 +344,11 @@ def build_parser():
         action='store_true',
         help='차선 인식 결과 OpenCV 창 표시',
     )
+    parser.add_argument(
+        '--hsv-tuner',
+        action='store_true',
+        help='HSV 범위를 실시간 조절하는 별도 창 표시',
+    )
     parser.add_argument('--camera-topic', default=CAMERA_TOPIC)
     parser.add_argument(
         '--speed-us',
@@ -348,6 +365,8 @@ def main(argv=None):
     options, ros_args = parser.parse_known_args(argv)
     if not NEUTRAL_US <= options.speed_us <= 1565:
         parser.error('--speed-us는 안전상 1500~1565 범위만 허용합니다')
+    if options.drive and options.hsv_tuner:
+        parser.error('HSV 조절 중에는 안전상 --drive를 함께 사용할 수 없습니다')
 
     try:
         import rclpy
@@ -386,6 +405,8 @@ def main(argv=None):
                 qos_profile_sensor_data,
             )
             self.watchdog = self.create_timer(0.1, self.check_image_timeout)
+            if options.hsv_tuner:
+                self.create_hsv_tuner()
             mode = (
                 '실제 저속 주행'
                 if self.hardware is not None
@@ -399,6 +420,77 @@ def main(argv=None):
                 f'조향 CH{STEERING_CH}={STEERING_RIGHT_US}~'
                 f'{STEERING_LEFT_US} us'
             )
+            if options.hsv_tuner:
+                self.get_logger().info(
+                    'HSV 슬라이더를 조절하고 p 키를 누르면 현재 값이 출력됩니다'
+                )
+
+        def create_hsv_tuner(self):
+            """Create a separate six-slider HSV control window."""
+            cv2.namedWindow(HSV_CONTROL_WINDOW, cv2.WINDOW_NORMAL)
+            cv2.resizeWindow(HSV_CONTROL_WINDOW, 640, 330)
+            values = (
+                ('H min', DEFAULT_LOWER_HSV[0], 180),
+                ('S min', DEFAULT_LOWER_HSV[1], 255),
+                ('V min', DEFAULT_LOWER_HSV[2], 255),
+                ('H max', DEFAULT_UPPER_HSV[0], 180),
+                ('S max', DEFAULT_UPPER_HSV[1], 255),
+                ('V max', DEFAULT_UPPER_HSV[2], 255),
+            )
+            for name, value, maximum in values:
+                cv2.createTrackbar(
+                    name,
+                    HSV_CONTROL_WINDOW,
+                    value,
+                    maximum,
+                    lambda _value: None,
+                )
+
+        def get_hsv_range(self):
+            """Read the current trackbar values or return white defaults."""
+            if not options.hsv_tuner:
+                return DEFAULT_LOWER_HSV, DEFAULT_UPPER_HSV
+            lower = tuple(
+                cv2.getTrackbarPos(name, HSV_CONTROL_WINDOW)
+                for name in ('H min', 'S min', 'V min')
+            )
+            upper = tuple(
+                cv2.getTrackbarPos(name, HSV_CONTROL_WINDOW)
+                for name in ('H max', 'S max', 'V max')
+            )
+            return lower, upper
+
+        def show_hsv_values(self, lower_hsv, upper_hsv):
+            """Render exact selected values inside the HSV control window."""
+            panel = np.zeros((130, 640, 3), dtype=np.uint8)
+            cv2.putText(
+                panel,
+                f'LOWER HSV = {list(lower_hsv)}',
+                (20, 38),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.75,
+                (255, 255, 255),
+                2,
+            )
+            cv2.putText(
+                panel,
+                f'UPPER HSV = {list(upper_hsv)}',
+                (20, 76),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.75,
+                (255, 255, 255),
+                2,
+            )
+            cv2.putText(
+                panel,
+                'Press p to print values in the terminal',
+                (20, 112),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.58,
+                (0, 255, 255),
+                1,
+            )
+            cv2.imshow(HSV_CONTROL_WINDOW, panel)
 
         def apply(self, steering_us, moving):
             """Apply a drive command, or do nothing in report-only mode."""
@@ -432,7 +524,12 @@ def main(argv=None):
                     message,
                     desired_encoding='bgr8',
                 )
-                observation, bev, mask = detect_white_lane(image)
+                lower_hsv, upper_hsv = self.get_hsv_range()
+                observation, bev, mask = detect_lane(
+                    image,
+                    lower_hsv,
+                    upper_hsv,
+                )
             except Exception as exc:
                 self.controller.reset()
                 self.lane_frames = 0
@@ -478,7 +575,7 @@ def main(argv=None):
                         f'({self.lane_frames}/{LANE_CONFIRM_FRAMES})',
                     )
 
-            if options.show:
+            if options.show or options.hsv_tuner:
                 display = bev.copy()
                 if observation is not None:
                     for x1, y1, x2, y2 in observation.lines[:, 0]:
@@ -509,9 +606,16 @@ def main(argv=None):
                     (0, 255, 255),
                     2,
                 )
-                cv2.imshow('white lane follow', display)
-                cv2.imshow('white lane mask', mask)
-                cv2.waitKey(1)
+                cv2.imshow('lane follow', display)
+                cv2.imshow('lane color mask', mask)
+                if options.hsv_tuner:
+                    self.show_hsv_values(lower_hsv, upper_hsv)
+                key = cv2.waitKey(1) & 0xFF
+                if key == ord('p'):
+                    self.get_logger().info(
+                        f'현재 HSV: lower={list(lower_hsv)}, '
+                        f'upper={list(upper_hsv)}'
+                    )
 
         def check_image_timeout(self):
             """Stop if camera images cease arriving."""

@@ -272,6 +272,15 @@ source /opt/ros/jazzy/setup.bash
 python3 camera_lane_follow.py --show
 ```
 
+HSV 색상 범위를 직접 맞추려면 다음처럼 실행합니다. 별도의 `HSV controls` 창에서
+`H/S/V min`, `H/S/V max` 슬라이더를 움직이면 마스크에 즉시 반영됩니다. 창에
+정확한 lower/upper 값이 표시되며, 영상 창에서 `p` 키를 누르면 터미널에도 현재
+값이 출력됩니다. 색상 조절 중에는 `--drive`를 사용하지 마세요.
+
+```bash
+python3 camera_lane_follow.py --hsv-tuner
+```
+
 인식 위치와 좌우 조향 방향을 확인한 후, 처음에는 반드시 바퀴를 띄우고 실제
 저속 주행을 시험합니다.
 
