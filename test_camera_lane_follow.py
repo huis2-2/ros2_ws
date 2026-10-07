@@ -4,8 +4,10 @@ import unittest
 
 from camera_lane_follow import (
     LaneController,
+    MAX_DELTA_ANGULAR,
     STEERING_CENTER_US,
     calculate_lane_info,
+    detect_edges,
     yellow_lane_mask,
 )
 
@@ -35,6 +37,16 @@ class LaneDetectionTests(unittest.TestCase):
         self.assertEqual(int(mask[75, 320]), 0)
         self.assertEqual(int(mask[390, 320]), 255)
 
+    def test_canny_edges_follow_yellow_mask_boundary(self):
+        """Canny processing should retain the lower yellow stripe edges."""
+        mask = np.zeros((480, 640), dtype=np.uint8)
+        mask[300:440, 300:340] = 255
+
+        blurred, edges = detect_edges(mask)
+
+        self.assertGreater(int(np.count_nonzero(blurred)), 0)
+        self.assertGreater(int(np.count_nonzero(edges)), 0)
+
 
 class LaneControllerTests(unittest.TestCase):
     """Check calibrated steering direction and rate limiting."""
@@ -43,25 +55,37 @@ class LaneControllerTests(unittest.TestCase):
         """A lane at the configured target should retain center steering."""
         controller = LaneController()
 
-        pulse = controller.steering_pulse(264.0, 90.0, 640)
+        pulse = controller.steering_pulse(320.0, 90.0, 640)
 
         self.assertEqual(pulse, STEERING_CENTER_US)
 
-    def test_left_command_is_rate_limited(self):
-        """Left error should increase the pulse by only one frame step."""
+    def test_left_error_uses_supplied_control_gains(self):
+        """Left error should use the supplied gain and smoothing values."""
         controller = LaneController()
 
         pulse = controller.steering_pulse(100.0, 60.0, 640)
 
-        self.assertEqual(pulse, STEERING_CENTER_US + 12)
+        self.assertEqual(pulse, 1784)
 
-    def test_right_command_is_rate_limited(self):
-        """Right error should decrease the pulse by only one frame step."""
+    def test_right_error_uses_supplied_control_gains(self):
+        """Right error should use the supplied gain and smoothing values."""
         controller = LaneController()
 
         pulse = controller.steering_pulse(500.0, 120.0, 640)
 
-        self.assertEqual(pulse, STEERING_CENTER_US - 12)
+        self.assertEqual(pulse, 1496)
+
+    def test_direction_reversal_limits_angular_change(self):
+        """A sudden left-to-right change must obey the supplied delta limit."""
+        controller = LaneController()
+        controller.previous_command = 3.2
+
+        controller.steering_pulse(500.0, 120.0, 640)
+
+        self.assertAlmostEqual(
+            controller.previous_command,
+            3.2 - MAX_DELTA_ANGULAR,
+        )
 
 
 if __name__ == '__main__':

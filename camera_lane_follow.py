@@ -39,6 +39,14 @@ CAMERA_TOPIC = '/camera/image_raw'
 IMAGE_TIMEOUT_SEC = 0.5
 LANE_CONFIRM_FRAMES = 3
 
+# Steering behavior from the supplied yellow-lane follower.
+KP_LATERAL = 0.0042
+KP_HEADING = 0.15
+DEADBAND_PX = 24.0
+MAX_ANGULAR = 3.20
+SMOOTH_ALPHA = 0.60
+MAX_DELTA_ANGULAR = 2.35
+
 
 @dataclass
 class LaneObservation:
@@ -55,13 +63,13 @@ def bird_eye_view(image):
     """Transform the road trapezoid into a front-facing rectangular view."""
     height, width = image.shape[:2]
     source = np.float32([
-        (width * 0.30, height * 0.55),
-        (width * 0.70, height * 0.55),
-        (width * 0.96, height * 0.96),
-        (width * 0.04, height * 0.96),
+        (int(width * 0.30), int(height * 0.55)),
+        (int(width * 0.70), int(height * 0.55)),
+        (int(width * 0.96), int(height * 0.96)),
+        (int(width * 0.04), int(height * 0.96)),
     ])
-    bev_width = width * 0.60
-    x_min = (width - bev_width) / 2.0
+    bev_width = int(width * 0.60)
+    x_min = int((width - bev_width) / 2)
     destination = np.float32([
         (x_min, 0),
         (x_min + bev_width, 0),
@@ -93,6 +101,31 @@ def yellow_lane_mask(image):
     kernel = np.ones((5, 5), dtype=np.uint8)
     mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
     return cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
+
+
+def detect_edges(mask):
+    """Blur the yellow mask and return the supplied Canny edge result."""
+    blurred = cv2.GaussianBlur(mask, (5, 5), 0)
+    edges = cv2.Canny(
+        blurred,
+        50,
+        150,
+        apertureSize=3,
+        L2gradient=True,
+    )
+    return blurred, edges
+
+
+def detect_hough_lines(edges):
+    """Detect lane segments with the supplied probabilistic Hough values."""
+    return cv2.HoughLinesP(
+        edges,
+        rho=1,
+        theta=np.pi / 180,
+        threshold=28,
+        minLineLength=18,
+        maxLineGap=28,
+    )
 
 
 def calculate_lane_info(lines, image_height):
@@ -132,16 +165,8 @@ def detect_yellow_lane(image):
     """Detect the lane using the supplied code's HSV and Hough method."""
     bev = bird_eye_view(image)
     mask = yellow_lane_mask(bev)
-    blurred = cv2.GaussianBlur(mask, (5, 5), 0)
-    edges = cv2.Canny(blurred, 50, 150, apertureSize=3, L2gradient=True)
-    lines = cv2.HoughLinesP(
-        edges,
-        rho=1,
-        theta=np.pi / 180,
-        threshold=28,
-        minLineLength=18,
-        maxLineGap=28,
-    )
+    _, edges = detect_edges(mask)
+    lines = detect_hough_lines(edges)
     center_x, angle_deg = calculate_lane_info(lines, image.shape[0])
     if center_x is None:
         return None, bev, mask
@@ -154,51 +179,56 @@ class LaneController:
     def __init__(self):
         """Start with centered steering and no previous correction."""
         self.previous_command = 0.0
-        self.previous_pulse = STEERING_CENTER_US
 
     def reset(self):
         """Reset smoothing state when the lane is lost."""
         self.previous_command = 0.0
-        self.previous_pulse = STEERING_CENTER_US
 
     def steering_pulse(self, center_x, angle_deg, image_width):
         """Return the next rate-limited steering pulse in microseconds."""
         scale = image_width / 640.0
-        target_x = image_width / 2.0 - 56.0 * scale
-        lateral_error = center_x - target_x
+        lateral_error = center_x - image_width / 2.0
         heading_error = angle_deg - 90.0
 
-        if abs(lateral_error) < 34.0 * scale:
+        if abs(lateral_error) < DEADBAND_PX * scale:
             lateral_error = 0.0
         if abs(heading_error) < 2.0:
             heading_error = 0.0
 
-        command = -0.0033 / scale * lateral_error - 0.20 * heading_error
-        command = float(np.clip(command, -8.0, 8.0))
-        command = 0.75 * command + 0.25 * self.previous_command
+        command = (
+            -KP_LATERAL / scale * lateral_error
+            - KP_HEADING * heading_error
+        )
+        command = float(np.clip(command, -MAX_ANGULAR, MAX_ANGULAR))
+        command = (
+            SMOOTH_ALPHA * command
+            + (1.0 - SMOOTH_ALPHA) * self.previous_command
+        )
+        delta = command - self.previous_command
+        if delta > MAX_DELTA_ANGULAR:
+            command = self.previous_command + MAX_DELTA_ANGULAR
+        elif delta < -MAX_DELTA_ANGULAR:
+            command = self.previous_command - MAX_DELTA_ANGULAR
 
         if command >= 0.0:
             pulse = STEERING_CENTER_US + (
-                command / 8.0 * (STEERING_LEFT_US - STEERING_CENTER_US)
+                command
+                / MAX_ANGULAR
+                * (STEERING_LEFT_US - STEERING_CENTER_US)
             )
         else:
             pulse = STEERING_CENTER_US + (
-                -command / 8.0 * (STEERING_RIGHT_US - STEERING_CENTER_US)
+                -command
+                / MAX_ANGULAR
+                * (STEERING_RIGHT_US - STEERING_CENTER_US)
             )
 
-        # Limit the servo movement per camera frame to avoid abrupt steering.
-        pulse = float(np.clip(
-            pulse,
-            self.previous_pulse - 12,
-            self.previous_pulse + 12,
-        ))
         pulse = int(round(np.clip(
             pulse,
             STEERING_RIGHT_US,
             STEERING_LEFT_US,
         )))
         self.previous_command = command
-        self.previous_pulse = pulse
         return pulse
 
 
