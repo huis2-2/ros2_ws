@@ -56,6 +56,7 @@ ros2 launch sllidar_ros2 view_sllidar_c1_launch.py \
 lidar_pid=$!
 
 avoidance_args=(
+    --no-rviz
     --left-us "${STEERING_LEFT_US}"
     --right-us "${STEERING_RIGHT_US}"
 )

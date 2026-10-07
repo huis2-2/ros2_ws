@@ -40,6 +40,12 @@ source install/setup.bash
 ./lidar_avoid.py --drive --left-us 1880 --right-us 1400
 ```
 
+`lidar_avoid.py`를 단독 실행하면 저장소의 LiDAR RViz 설정으로 RViz도 자동
+실행되며, 터미널에는 0.5초마다 전방·왼쪽·오른쪽 거리와 현재 주행 상태가
+표시됩니다. RViz가 이미 실행 중이면 `--no-rviz`를 추가해 중복 실행을 막을 수
+있습니다. RViz 표시와 거리 출력을 위해 LiDAR 드라이버의 `/scan` 토픽은 먼저
+실행되어 있어야 합니다.
+
 `lidar_avoid.py`는 시간 기반 S자 회피를 시험하는 별도 코드입니다. 기본 실행은
 PWM을 출력하지 않고 판단 로그만 표시하며, 실제 구동은 검증된 조향값과 함께
 `--drive`를 명시해야 합니다.
