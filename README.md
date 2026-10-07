@@ -246,9 +246,10 @@ python3 lidar_distance_monitor.py
 ros2 run camera_node camera_node
 ```
 
-### 카메라 흰색·노란색 차선 저속 주행
+### 카메라 흰 차선 저속 주행
 
-`camera_lane_follow.py`는 `/camera/image_raw`에서 흰색과 노란색 차선을 검출하고, 기존
+`camera_lane_follow.py`는 `/camera/image_raw`에서 흰색과 노란색 마스크를 각각
+표시하고 흰 선만 검출해 따라갑니다. 기존
 실차 보정값인 속도 PCA9685 CH8과 조향 CH9를 사용합니다. 차선이 보일 때만
 3프레임 연속 감지를 확인한 뒤 기본 `1545 us`로 저속 주행하며 차선 또는 카메라
 영상을 잃으면 즉시 ESC 중립 `1500 us`, 조향 중앙 `1640 us`로 정지합니다.
@@ -267,22 +268,13 @@ ros2 run camera_node camera_node
 ```
 
 다른 터미널에서 실제 PWM을 출력하지 않는 인식 시험을 실행합니다. `--show`를
-붙이면 BEV 차선 영상과 흰색 마스크를 확인할 수 있습니다.
+붙이면 BEV 차선 영상, 조향에 사용하는 `white mask`, 확인 전용 `yellow mask`를
+각각 별도 창에서 볼 수 있습니다.
 
 ```bash
 cd ~/ros2_ws
 source /opt/ros/jazzy/setup.bash
 python3 camera_lane_follow.py --show
-```
-
-HSV 색상 범위를 직접 맞추려면 다음처럼 실행합니다. 별도의 `HSV controls` 창에서
-흰색 `W H/S/V min/max`와 노란색 `Y H/S/V min/max` 슬라이더를 움직이면 두
-마스크를 합친 결과에 즉시 반영됩니다. 창에 두 색의 정확한 lower/upper 값이
-표시되며, 영상 창에서 `p` 키를 누르면 터미널에도 현재 값이 출력됩니다. 색상
-조절 중에는 `--drive`를 사용하지 마세요.
-
-```bash
-python3 camera_lane_follow.py --hsv-tuner
 ```
 
 인식 위치와 좌우 조향 방향을 확인한 후, 처음에는 반드시 바퀴를 띄우고 실제

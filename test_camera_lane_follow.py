@@ -7,8 +7,13 @@ from camera_lane_follow import (
     LaneController,
     MAX_DELTA_ANGULAR,
     STEERING_CENTER_US,
+    WHITE_LOWER_HSV,
+    WHITE_UPPER_HSV,
+    YELLOW_LOWER_HSV,
+    YELLOW_UPPER_HSV,
     calculate_lane_info,
     detect_edges,
+    detect_white_lane,
     lane_color_mask,
     write_status_log,
 )
@@ -34,29 +39,30 @@ class LaneDetectionTests(unittest.TestCase):
         image[50:100, 300:340] = (255, 255, 255)
         image[350:430, 300:340] = (255, 255, 255)
 
-        mask = lane_color_mask(image)
+        mask = lane_color_mask(image, WHITE_LOWER_HSV, WHITE_UPPER_HSV)
 
         self.assertEqual(int(mask[75, 320]), 0)
         self.assertEqual(int(mask[390, 320]), 255)
 
-    def test_default_ranges_select_calibrated_yellow(self):
-        """The supplied yellow calibration should be enabled by default."""
+    def test_yellow_mask_uses_calibrated_range(self):
+        """The separate yellow mask should use its calibrated range."""
         image = np.zeros((480, 640, 3), dtype=np.uint8)
         image[350:430, 300:340] = (100, 200, 220)
 
-        mask = lane_color_mask(image)
+        mask = lane_color_mask(image, YELLOW_LOWER_HSV, YELLOW_UPPER_HSV)
 
         self.assertGreater(int(np.count_nonzero(mask)), 0)
 
-    def test_custom_hsv_ranges_are_applied(self):
-        """Caller-selected HSV ranges should replace calibrated defaults."""
+    def test_white_detector_does_not_follow_yellow_only_image(self):
+        """A yellow-only road image must not produce a steering lane."""
         image = np.zeros((480, 640, 3), dtype=np.uint8)
-        image[350:430, 300:340] = (0, 255, 255)
+        image[300:450, 280:340] = (100, 200, 220)
 
-        ranges = (((18, 70, 70), (42, 255, 255)),)
-        mask = lane_color_mask(image, ranges)
+        observation, _, white_mask, yellow_mask = detect_white_lane(image)
 
-        self.assertGreater(int(np.count_nonzero(mask)), 0)
+        self.assertIsNone(observation)
+        self.assertEqual(int(np.count_nonzero(white_mask)), 0)
+        self.assertGreater(int(np.count_nonzero(yellow_mask)), 0)
 
     def test_canny_edges_follow_white_mask_boundary(self):
         """Canny processing should retain the lower white stripe edges."""
