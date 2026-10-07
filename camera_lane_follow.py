@@ -185,6 +185,14 @@ def detect_lane(
     return LaneObservation(center_x, angle_deg, lines, bev, mask), bev, mask
 
 
+def write_status_log(logger, text, warning=False):
+    """Log each severity from a stable ROS 2 call site."""
+    if warning:
+        logger.warning(text)
+    else:
+        logger.info(text)
+
+
 class LaneController:
     """Convert lane errors to calibrated steering pulses."""
 
@@ -506,12 +514,7 @@ def main(argv=None):
             """Log state changes immediately and steady state once a second."""
             now = time.monotonic()
             if key != self.last_log_key or now - self.last_log_at >= 1.0:
-                log = (
-                    self.get_logger().warning
-                    if warning
-                    else self.get_logger().info
-                )
-                log(text)
+                write_status_log(self.get_logger(), text, warning)
                 self.last_log_at = now
                 self.last_log_key = key
 

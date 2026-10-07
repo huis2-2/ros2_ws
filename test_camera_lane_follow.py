@@ -1,6 +1,7 @@
 """Unit tests for white-lane detection and steering conversion."""
 
 import unittest
+from unittest.mock import Mock
 
 from camera_lane_follow import (
     LaneController,
@@ -9,6 +10,7 @@ from camera_lane_follow import (
     calculate_lane_info,
     detect_edges,
     lane_color_mask,
+    write_status_log,
 )
 
 import numpy as np
@@ -104,6 +106,21 @@ class LaneControllerTests(unittest.TestCase):
             controller.previous_command,
             3.2 - MAX_DELTA_ANGULAR,
         )
+
+
+class StatusLoggingTests(unittest.TestCase):
+    """Check that status severity uses separate logger methods."""
+
+    def test_info_and_warning_use_stable_calls(self):
+        """Switching status severity should call each dedicated method."""
+        logger = Mock()
+
+        write_status_log(logger, 'lane found')
+        write_status_log(logger, 'lane lost', warning=True)
+        write_status_log(logger, 'lane found again')
+
+        self.assertEqual(logger.info.call_count, 2)
+        logger.warning.assert_called_once_with('lane lost')
 
 
 if __name__ == '__main__':
