@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Follow a yellow lane from a ROS 2 camera image at low speed.
+"""Follow a white lane from a ROS 2 camera image at low speed.
 
 The default mode only reports the command it would send. Pass ``--drive``
 after checking the camera image and steering direction with the wheels raised.
@@ -39,7 +39,7 @@ CAMERA_TOPIC = '/camera/image_raw'
 IMAGE_TIMEOUT_SEC = 0.5
 LANE_CONFIRM_FRAMES = 3
 
-# Steering behavior from the supplied yellow-lane follower.
+# Steering behavior from the supplied lane follower.
 KP_LATERAL = 0.0042
 KP_HEADING = 0.15
 DEADBAND_PX = 24.0
@@ -80,13 +80,13 @@ def bird_eye_view(image):
     return cv2.warpPerspective(image, matrix, (width, height))
 
 
-def yellow_lane_mask(image):
-    """Return a cleaned mask for the yellow lane in the lower road area."""
+def white_lane_mask(image):
+    """Return a cleaned mask for the white lane in the lower road area."""
     hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
     mask = cv2.inRange(
         hsv,
-        np.array([18, 70, 70], dtype=np.uint8),
-        np.array([42, 255, 255], dtype=np.uint8),
+        np.array([0, 0, 180], dtype=np.uint8),
+        np.array([180, 70, 255], dtype=np.uint8),
     )
     height, width = mask.shape
     roi = np.zeros_like(mask)
@@ -104,7 +104,7 @@ def yellow_lane_mask(image):
 
 
 def detect_edges(mask):
-    """Blur the yellow mask and return the supplied Canny edge result."""
+    """Blur the white mask and return the supplied Canny edge result."""
     blurred = cv2.GaussianBlur(mask, (5, 5), 0)
     edges = cv2.Canny(
         blurred,
@@ -161,10 +161,10 @@ def calculate_lane_info(lines, image_height):
     return float(np.mean(x_values)), float(np.mean(angles))
 
 
-def detect_yellow_lane(image):
+def detect_white_lane(image):
     """Detect the lane using the supplied code's HSV and Hough method."""
     bev = bird_eye_view(image)
-    mask = yellow_lane_mask(bev)
+    mask = white_lane_mask(bev)
     _, edges = detect_edges(mask)
     lines = detect_hough_lines(edges)
     center_x, angle_deg = calculate_lane_info(lines, image.shape[0])
@@ -392,7 +392,7 @@ def main(argv=None):
                 else '판단 로그 시험'
             )
             self.get_logger().info(
-                f'{mode}: {options.camera_topic}의 노란 차선을 기다립니다'
+                f'{mode}: {options.camera_topic}의 흰 차선을 기다립니다'
             )
             self.get_logger().info(
                 f'차선 감지 시 속도 CH{THROTTLE_CH}={options.speed_us} us, '
@@ -432,7 +432,7 @@ def main(argv=None):
                     message,
                     desired_encoding='bgr8',
                 )
-                observation, bev, mask = detect_yellow_lane(image)
+                observation, bev, mask = detect_white_lane(image)
             except Exception as exc:
                 self.controller.reset()
                 self.lane_frames = 0
@@ -450,7 +450,7 @@ def main(argv=None):
                 self.apply(STEERING_CENTER_US, False)
                 self.report(
                     'lost',
-                    '노란 차선을 찾지 못해 중립 정지',
+                    '흰 차선을 찾지 못해 중립 정지',
                     warning=True,
                 )
                 steering_us = STEERING_CENTER_US
@@ -509,8 +509,8 @@ def main(argv=None):
                     (0, 255, 255),
                     2,
                 )
-                cv2.imshow('yellow lane follow', display)
-                cv2.imshow('yellow lane mask', mask)
+                cv2.imshow('white lane follow', display)
+                cv2.imshow('white lane mask', mask)
                 cv2.waitKey(1)
 
         def check_image_timeout(self):

@@ -246,9 +246,9 @@ python3 lidar_distance_monitor.py
 ros2 run camera_node camera_node
 ```
 
-### 카메라 노란 차선 저속 주행
+### 카메라 흰 차선 저속 주행
 
-`camera_lane_follow.py`는 `/camera/image_raw`에서 노란 차선을 검출하고, 기존
+`camera_lane_follow.py`는 `/camera/image_raw`에서 흰 차선을 검출하고, 기존
 실차 보정값인 속도 PCA9685 CH8과 조향 CH9를 사용합니다. 차선이 보일 때만
 3프레임 연속 감지를 확인한 뒤 기본 `1545 us`로 저속 주행하며 차선 또는 카메라
 영상을 잃으면 즉시 ESC 중립 `1500 us`, 조향 중앙 `1640 us`로 정지합니다.
@@ -264,7 +264,7 @@ ros2 run camera_node camera_node
 ```
 
 다른 터미널에서 실제 PWM을 출력하지 않는 인식 시험을 실행합니다. `--show`를
-붙이면 BEV 차선 영상과 노란색 마스크를 확인할 수 있습니다.
+붙이면 BEV 차선 영상과 흰색 마스크를 확인할 수 있습니다.
 
 ```bash
 cd ~/ros2_ws

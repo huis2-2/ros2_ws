@@ -1,4 +1,4 @@
-"""Unit tests for yellow-lane detection and steering conversion."""
+"""Unit tests for white-lane detection and steering conversion."""
 
 import unittest
 
@@ -8,7 +8,7 @@ from camera_lane_follow import (
     STEERING_CENTER_US,
     calculate_lane_info,
     detect_edges,
-    yellow_lane_mask,
+    white_lane_mask,
 )
 
 import numpy as np
@@ -26,19 +26,28 @@ class LaneDetectionTests(unittest.TestCase):
         self.assertEqual(center_x, 200.0)
         self.assertEqual(angle, 90.0)
 
-    def test_yellow_mask_ignores_upper_image(self):
-        """Only yellow pixels in the lower road ROI should remain."""
+    def test_white_mask_ignores_upper_image(self):
+        """Only white pixels in the lower road ROI should remain."""
         image = np.zeros((480, 640, 3), dtype=np.uint8)
-        image[50:100, 300:340] = (0, 255, 255)
-        image[350:430, 300:340] = (0, 255, 255)
+        image[50:100, 300:340] = (255, 255, 255)
+        image[350:430, 300:340] = (255, 255, 255)
 
-        mask = yellow_lane_mask(image)
+        mask = white_lane_mask(image)
 
         self.assertEqual(int(mask[75, 320]), 0)
         self.assertEqual(int(mask[390, 320]), 255)
 
-    def test_canny_edges_follow_yellow_mask_boundary(self):
-        """Canny processing should retain the lower yellow stripe edges."""
+    def test_white_mask_rejects_yellow(self):
+        """A saturated yellow marking must not be treated as a white lane."""
+        image = np.zeros((480, 640, 3), dtype=np.uint8)
+        image[350:430, 300:340] = (0, 255, 255)
+
+        mask = white_lane_mask(image)
+
+        self.assertEqual(int(np.count_nonzero(mask)), 0)
+
+    def test_canny_edges_follow_white_mask_boundary(self):
+        """Canny processing should retain the lower white stripe edges."""
         mask = np.zeros((480, 640), dtype=np.uint8)
         mask[300:440, 300:340] = 255
 
