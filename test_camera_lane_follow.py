@@ -27,6 +27,12 @@ import numpy as np
 class LaneDetectionTests(unittest.TestCase):
     """Check image-mask and Hough-line interpretation helpers."""
 
+    def test_requested_hsv_ranges_are_used(self):
+        self.assertEqual(WHITE_LOWER_HSV, (0, 0, 252))
+        self.assertEqual(WHITE_UPPER_HSV, (0, 116, 255))
+        self.assertEqual(YELLOW_LOWER_HSV, (7, 21, 201))
+        self.assertEqual(YELLOW_UPPER_HSV, (179, 255, 255))
+
     def test_lane_info_uses_visible_vertical_line(self):
         """A vertical lower-image line should produce its x and 90 degrees."""
         lines = np.array([[[200, 300, 200, 450]]], dtype=np.int32)
