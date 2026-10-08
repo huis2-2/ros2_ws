@@ -6,12 +6,15 @@ from unittest.mock import Mock
 from camera_lane_follow import (
     LaneController,
     MAX_DELTA_ANGULAR,
+    MAX_SPEED_US,
+    SLOW_SPEED_US,
     STEERING_CENTER_US,
     WHITE_LOWER_HSV,
     WHITE_UPPER_HSV,
     YELLOW_LOWER_HSV,
     YELLOW_UPPER_HSV,
     calculate_lane_info,
+    build_parser,
     detect_edges,
     detect_white_lane,
     lane_color_mask,
@@ -128,6 +131,17 @@ class StatusLoggingTests(unittest.TestCase):
 
         self.assertEqual(logger.info.call_count, 2)
         logger.warning.assert_called_once_with('lane lost')
+
+
+class CommandLineTests(unittest.TestCase):
+    """Check the requested standalone lane-following speed."""
+
+    def test_default_speed_is_1700_us(self):
+        options = build_parser().parse_args([])
+
+        self.assertEqual(SLOW_SPEED_US, 1700)
+        self.assertEqual(MAX_SPEED_US, 1700)
+        self.assertEqual(options.speed_us, 1700)
 
 
 if __name__ == '__main__':

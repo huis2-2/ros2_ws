@@ -26,7 +26,8 @@ MUX_FREQ = 50
 MUX_DUTY = 10.0
 
 NEUTRAL_US = 1500
-SLOW_SPEED_US = 1545
+SLOW_SPEED_US = 1700
+MAX_SPEED_US = 1700
 STEERING_CENTER_US = 1640
 STEERING_LEFT_US = 1880
 STEERING_RIGHT_US = 1400
@@ -367,8 +368,11 @@ def main(argv=None):
     """Run the ROS 2 lane follower and always restore safe outputs."""
     parser = build_parser()
     options, ros_args = parser.parse_known_args(argv)
-    if not NEUTRAL_US <= options.speed_us <= 1565:
-        parser.error('--speed-us는 안전상 1500~1565 범위만 허용합니다')
+    if not NEUTRAL_US <= options.speed_us <= MAX_SPEED_US:
+        parser.error(
+            f'--speed-us는 안전상 {NEUTRAL_US}~{MAX_SPEED_US} '
+            '범위만 허용합니다'
+        )
 
     try:
         import rclpy
@@ -408,7 +412,7 @@ def main(argv=None):
             )
             self.watchdog = self.create_timer(0.1, self.check_image_timeout)
             mode = (
-                '실제 저속 주행'
+                '실제 차선 주행'
                 if self.hardware is not None
                 else '판단 로그 시험'
             )
