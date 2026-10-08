@@ -70,7 +70,8 @@ cleanup() {
 trap cleanup EXIT INT TERM
 
 echo "LiDAR 연결: ${LIDAR_PORT}"
-setsid ros2 launch sllidar_ros2 sllidar_c1_launch.py \
+echo "RViz에서 /scan을 표시합니다."
+setsid ros2 launch sllidar_ros2 view_sllidar_c1_launch.py \
     serial_port:="${LIDAR_PORT}" &
 lidar_pid=$!
 

@@ -1,5 +1,6 @@
 """Unit tests for combined camera and LiDAR command arbitration."""
 
+import math
 import unittest
 
 from camera_lane_follow import (
@@ -8,7 +9,7 @@ from camera_lane_follow import (
     STEERING_LEFT_US,
     STEERING_RIGHT_US,
 )
-from camera_lidar_follow import choose_motion
+from camera_lidar_follow import choose_motion, format_distance
 from lidar_avoidance_logic import DriveCommand
 
 
@@ -74,6 +75,15 @@ class CombinedDecisionTests(unittest.TestCase):
 
         self.assertEqual(decision.mode, 'camera_timeout')
         self.assertFalse(decision.moving)
+
+
+class DistanceFormattingTests(unittest.TestCase):
+    def test_formats_measured_distance(self):
+        self.assertEqual(format_distance(0.834), '0.83 m')
+
+    def test_formats_clear_and_invalid_sectors(self):
+        self.assertEqual(format_distance(math.inf), '감지 없음')
+        self.assertEqual(format_distance(None), '데이터 없음')
 
 
 if __name__ == '__main__':

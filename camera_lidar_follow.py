@@ -3,6 +3,7 @@
 
 import argparse
 from dataclasses import dataclass
+import math
 import time
 
 import cv2
@@ -27,6 +28,7 @@ SCAN_TIMEOUT_SEC = 0.5
 
 LANE_SPEED_US = 1565
 AVOID_SPEED_US = 1565
+DISTANCE_LOG_INTERVAL_SEC = 0.5
 
 FRONT_CENTER_DEG = 180.0
 FRONT_HALF_WIDTH_DEG = 25.0
@@ -43,6 +45,15 @@ class MotionDecision:
     speed_us: int
     moving: bool
     reason: str
+
+
+def format_distance(distance):
+    """Format one LiDAR sector distance for terminal output."""
+    if distance is None:
+        return '데이터 없음'
+    if math.isinf(distance):
+        return '감지 없음'
+    return f'{distance:.2f} m'
 
 
 def choose_motion(
@@ -195,6 +206,7 @@ def main(argv=None):
 
             self.last_image_at = None
             self.last_scan_at = None
+            self.last_distance_log_at = 0.0
             self.lane_frames = 0
             self.lane_steering_us = None
             self.lidar_command = None
@@ -297,7 +309,8 @@ def main(argv=None):
                 cv2.waitKey(1)
 
         def scan_callback(self, scan):
-            self.last_scan_at = time.monotonic()
+            now = time.monotonic()
+            self.last_scan_at = now
             sectors = analyze_scan(
                 scan,
                 front_center_deg=FRONT_CENTER_DEG,
@@ -306,6 +319,15 @@ def main(argv=None):
                 side_half_width_deg=SIDE_HALF_WIDTH_DEG,
             )
             self.lidar_command = self.avoidance_controller.update(sectors)
+
+            if now - self.last_distance_log_at >= DISTANCE_LOG_INTERVAL_SEC:
+                self.get_logger().info(
+                    f'거리: 중앙={format_distance(sectors.front_m)}, '
+                    f'좌={format_distance(sectors.left_m)}, '
+                    f'우={format_distance(sectors.right_m)} | '
+                    f'LiDAR 상태={self.lidar_command.mode}'
+                )
+                self.last_distance_log_at = now
 
         def control(self):
             now = time.monotonic()
