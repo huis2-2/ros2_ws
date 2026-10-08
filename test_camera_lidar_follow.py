@@ -9,8 +9,12 @@ from camera_lane_follow import (
     STEERING_LEFT_US,
     STEERING_RIGHT_US,
 )
-from camera_lidar_follow import choose_motion, format_distance
-from lidar_avoidance_logic import DriveCommand
+from camera_lidar_follow import (
+    build_avoidance_controller,
+    choose_motion,
+    format_distance,
+)
+from lidar_avoidance_logic import DriveCommand, ScanSectors
 
 
 class CombinedDecisionTests(unittest.TestCase):
@@ -84,6 +88,29 @@ class DistanceFormattingTests(unittest.TestCase):
     def test_formats_clear_and_invalid_sectors(self):
         self.assertEqual(format_distance(math.inf), '감지 없음')
         self.assertEqual(format_distance(None), '데이터 없음')
+
+
+class ReturnToLaneTests(unittest.TestCase):
+    def test_returns_to_lane_after_obstacle_clears(self):
+        controller = build_avoidance_controller()
+        avoiding = controller.update(ScanSectors(0.60, 1.20, 0.80))
+        cleared = controller.update(ScanSectors(0.76, 1.20, 0.80))
+
+        self.assertEqual(avoiding.mode, 'avoiding_left')
+        self.assertEqual(cleared.mode, 'straight')
+
+        decision = choose_motion(cleared, True, True, True, 1670)
+        self.assertEqual(decision.mode, 'lane_follow')
+        self.assertEqual(decision.steering_us, 1670)
+        self.assertTrue(decision.moving)
+
+    def test_keeps_avoiding_inside_return_threshold(self):
+        controller = build_avoidance_controller()
+        controller.update(ScanSectors(0.60, 1.20, 0.80))
+
+        command = controller.update(ScanSectors(0.74, 1.20, 0.80))
+
+        self.assertEqual(command.mode, 'avoiding_left')
 
 
 if __name__ == '__main__':

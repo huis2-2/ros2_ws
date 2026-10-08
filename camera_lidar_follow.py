@@ -18,7 +18,11 @@ from camera_lane_follow import (
     STEERING_RIGHT_US,
     detect_white_lane,
 )
-from lidar_avoidance_logic import AvoidanceController, analyze_scan
+from lidar_avoidance_logic import (
+    AvoidanceConfig,
+    AvoidanceController,
+    analyze_scan,
+)
 
 
 CAMERA_TOPIC = '/camera/image_raw'
@@ -29,6 +33,8 @@ SCAN_TIMEOUT_SEC = 0.5
 LANE_SPEED_US = 1565
 AVOID_SPEED_US = 1565
 DISTANCE_LOG_INTERVAL_SEC = 0.5
+AVOID_DISTANCE_M = 0.70
+RETURN_TO_LANE_DISTANCE_M = 0.75
 
 FRONT_CENTER_DEG = 180.0
 FRONT_HALF_WIDTH_DEG = 25.0
@@ -54,6 +60,14 @@ def format_distance(distance):
     if math.isinf(distance):
         return '감지 없음'
     return f'{distance:.2f} m'
+
+
+def build_avoidance_controller():
+    """Build the LiDAR controller with a short lane-return hysteresis."""
+    return AvoidanceController(AvoidanceConfig(
+        avoid_distance_m=AVOID_DISTANCE_M,
+        clear_distance_m=RETURN_TO_LANE_DISTANCE_M,
+    ))
 
 
 def choose_motion(
@@ -202,7 +216,7 @@ def main(argv=None):
             self.hardware = hardware
             self.bridge = CvBridge()
             self.lane_controller = LaneController()
-            self.avoidance_controller = AvoidanceController()
+            self.avoidance_controller = build_avoidance_controller()
 
             self.last_image_at = None
             self.last_scan_at = None
@@ -236,6 +250,10 @@ def main(argv=None):
             self.get_logger().info(
                 f'차선 속도={options.lane_speed_us} us, '
                 f'회피 속도={options.avoid_speed_us} us'
+            )
+            self.get_logger().info(
+                f'LiDAR 회피 시작={AVOID_DISTANCE_M:.2f} m 이하, '
+                f'차선 복귀={RETURN_TO_LANE_DISTANCE_M:.2f} m 이상'
             )
 
         def image_callback(self, message):
