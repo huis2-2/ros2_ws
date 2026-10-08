@@ -142,12 +142,12 @@ class StatusLoggingTests(unittest.TestCase):
 class CommandLineTests(unittest.TestCase):
     """Check the requested standalone lane-following speed."""
 
-    def test_default_speed_is_1610_us(self):
+    def test_default_speed_is_1600_us(self):
         options = build_parser().parse_args([])
 
-        self.assertEqual(SLOW_SPEED_US, 1610)
-        self.assertEqual(MAX_SPEED_US, 1610)
-        self.assertEqual(options.speed_us, 1610)
+        self.assertEqual(SLOW_SPEED_US, 1600)
+        self.assertEqual(MAX_SPEED_US, 1600)
+        self.assertEqual(options.speed_us, 1600)
 
 
 if __name__ == '__main__':
