@@ -293,6 +293,32 @@ python3 camera_lane_follow.py --drive --show
 카메라 토픽과 속도는 각각 `--camera-topic`, `--speed-us`로 바꿀 수 있습니다.
 속도는 안전상 중립을 포함한 `1500~1565 us`만 허용합니다.
 
+### 카메라 차선 주행 + LiDAR 장애물 회피
+
+`camera_lidar_follow.py`는 전방이 깨끗할 때 카메라의 흰 차선을 따라가고,
+LiDAR가 장애물을 감지하면 좌우 중 여유가 큰 통로로 회피합니다. LiDAR 데이터가
+끊기거나 장애물이 너무 가깝거나 좌우 통로가 모두 막히면 즉시 중립 정지합니다.
+전방이 깨끗한 상태에서 카메라 영상 또는 흰 차선을 잃어도 정지합니다.
+
+카메라와 LiDAR를 포함한 판단 로그 시험은 다음 명령 하나로 시작합니다. 이
+명령은 실제 PWM을 출력하지 않습니다.
+
+```bash
+cd ~/ros2_ws
+./run_camera_lidar_follow.sh --show
+```
+
+화면과 터미널에서 차선 방향 및 LiDAR 회피 방향을 확인한 다음, 처음에는 반드시
+바퀴를 띄우고 실제 주행을 실행합니다.
+
+```bash
+./run_camera_lidar_follow.sh --drive --show
+```
+
+통합 노드는 기본 차선 속도와 회피 속도 모두 `1565 us`를 사용합니다.
+각각 `--lane-speed-us`, `--avoid-speed-us`로 변경할 수 있으며 안전상
+`1500~1565 us` 범위만 허용합니다. 종료는 `Ctrl+C`입니다.
+
 ### PWM 상태 읽기
 
 세 sysfs PWM 경로의 duty 비율을 50 Hz로 읽어 `/pwm_duty`에 `[PWM1, PWM5, PWM7]` 순서로 발행합니다.
