@@ -265,6 +265,20 @@ ros2 run camera_node camera_node
 - 흰색 기본 HSV: lower `[0, 0, 255]`, upper `[0, 106, 255]`
 - 노란색 기본 HSV: lower `[19, 0, 197]`, upper `[64, 153, 255]`
 
+HSV 값을 직접 조절할 때는 모터를 사용하지 않는 별도 도구를 실행합니다. 먼저
+`camera_node`와 카메라를 사용하는 다른 프로그램을 종료한 뒤 실행합니다.
+
+```bash
+cd ~/ros2_ws
+python3 hsv_tuner.py
+```
+
+노란색 값에서 시작하려면 `python3 hsv_tuner.py --color yellow`를 사용합니다.
+`HSV controls` 창의 H/S/V min/max 슬라이더를 움직이면 원본 HSV 마스크와 실제
+차선 ROI 마스크가 즉시 바뀝니다. `p`를 누르면 현재 값을 터미널에 출력하고,
+`q` 또는 `Esc`를 누르면 최종 값을 출력한 뒤 종료합니다. 이 도구는 차량 PWM을
+출력하지 않습니다.
+
 먼저 한 터미널에서 카메라 노드를 실행합니다.
 
 ```bash
