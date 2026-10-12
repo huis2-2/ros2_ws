@@ -19,16 +19,16 @@ import numpy as np
 
 # ===== 조절할 제어 파라미터: 수정 후 다시 실행 =====
 # 1. 속도: 기존 실행 가능한 PWM 범위에서 먼저 조정
-STRAIGHT_SPEED_US = 1620  # 직선 기본값. --speed-us 옵션이 있으면 옵션이 우선
-CURVE_SPEED_US = 1590     # 커브/부분 검출 시 목표 저속값
-MAX_SPEED_US = 1620       # 실행 옵션 상한. 속도를 올릴 때 별도로 확인
+STRAIGHT_SPEED_US = 1640  # 직선 기본값. --speed-us 옵션이 있으면 옵션이 우선
+CURVE_SPEED_US = 1620     # 커브/부분 검출 시 목표 저속값
+MAX_SPEED_US = 1660       # 실행 옵션 상한. 속도를 올릴 때 별도로 확인
 
 # 2. 정상 차선 조향: 한 번에 한 값씩 변경
-KP_LATERAL = 0.007        # 가까운 선의 위치 오차 보정. 시험 간격: 0.0005
+KP_LATERAL = 0.012        # 가까운 선의 위치 오차 보정. 시험 간격: 0.0005
 KP_HEADING = 0.18         # 방향 오차(도 단위) 보정. 시험 간격: 0.01
 DEADBAND_PX = 8.0         # 640px 폭 기준, 이보다 작은 위치 오차는 무시
 HEADING_DEADBAND_DEG = 1.0  # 이보다 작은 방향 오차(도)는 무시
-MAX_ANGULAR = 3.20        # 내부 명령 정규화 상한(실제 바퀴 각도 아님)
+MAX_ANGULAR = 1.60        # 내부 명령 정규화 상한(실제 바퀴 각도 아님)
                          # 올리면 같은 오차에서 PWM 변화가 작아짐. 우선 고정
 
 # 3. 커브 감속: severity=max(|방향오차|/30도, |조향PWM-중앙|/좌우범위)
@@ -44,7 +44,7 @@ LANE_CONFIRM_FRAMES = 3     # 정상 차선을 연속 확인한 뒤 출발/재�
 
 # 5. 차선 유실 탐색: 코너에서 선이 사라지면 마지막으로 본 쪽으로 최대 조향
 LOST_SEARCH_SEC = 1.0       # 마지막 추종 후 이 시간 동안 탐색 주행, 이후 정지
-LOST_SEARCH_SPEED_US = 1590  # 탐색 중 속도. CURVE_SPEED_US 이하 권장
+LOST_SEARCH_SPEED_US = 1620  # 탐색 중 속도. CURVE_SPEED_US 이하 권장
 
 # 6. 탐색창: 픽셀 값은 영상 폭에 맞춰 640px 기준에서 자동 비례
 SLIDING_WINDOW_MARGIN_PX = 45  # 기본 좌우 탐색 반폭
