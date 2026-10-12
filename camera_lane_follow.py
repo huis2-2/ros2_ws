@@ -66,6 +66,10 @@ class LaneObservation:
     lines: np.ndarray
     bev: np.ndarray
     mask: np.ndarray
+    target_y: int
+    track: tuple
+    curve: np.ndarray
+    bottom_x: float
 
 
 def bird_eye_view(image):
@@ -171,7 +175,7 @@ def sliding_window_track(mask, initial_x):
     height, width = mask.shape
     roi_top = int(height * 0.58)
     roi_bottom = int(height * 0.98)
-    window_height = max(1, (roi_bottom - roi_top) // SLIDING_WINDOW_COUNT)
+    boundaries = np.linspace(roi_bottom + 1, roi_top, SLIDING_WINDOW_COUNT + 1).astype(int)
     margin = max(1, int(SLIDING_WINDOW_MARGIN_PX * width / 640.0))
     current_x = int(np.clip(initial_x, 0, width - 1))
     nonzero_y, nonzero_x = mask.nonzero()
@@ -180,8 +184,8 @@ def sliding_window_track(mask, initial_x):
     selected_indices = []
 
     for window_index in range(SLIDING_WINDOW_COUNT):
-        y_high = roi_bottom - window_index * window_height
-        y_low = max(roi_top, y_high - window_height)
+        y_high = int(boundaries[window_index])
+        y_low = int(boundaries[window_index + 1])
         x_low = max(0, current_x - margin)
         x_high = min(width - 1, current_x + margin)
         windows.append((x_low, y_low, x_high, y_high))
@@ -194,8 +198,10 @@ def sliding_window_track(mask, initial_x):
         )
         if indices.size >= SLIDING_WINDOW_MIN_PIXELS:
             current_x = int(np.mean(nonzero_x[indices]))
-        centers.append((current_x, (y_low + y_high) // 2))
-        selected_indices.append(indices)
+            centers.append((current_x, int(np.mean(nonzero_y[indices]))))
+            selected_indices.append(indices)
+        else:
+            centers.append(None)
 
     if selected_indices:
         selected = np.concatenate(selected_indices)
@@ -204,49 +210,91 @@ def sliding_window_track(mask, initial_x):
     return windows, centers, nonzero_x[selected], nonzero_y[selected]
 
 
-def draw_sliding_windows(image, mask, initial_x):
+def draw_sliding_windows(image, mask, initial_x, track=None):
     """Overlay the active sliding windows and selected lane pixels."""
     display = image.copy()
-    windows, centers, selected_x, selected_y = sliding_window_track(
-        mask,
-        initial_x,
+    windows, centers, selected_x, selected_y = (
+        track if track is not None else sliding_window_track(mask, initial_x)
     )
     display[selected_y, selected_x] = (255, 0, 255)
-    for x_low, y_low, x_high, y_high in windows:
+    for (x_low, y_low, x_high, y_high), center in zip(windows, centers):
         cv2.rectangle(
             display,
             (x_low, y_low),
             (x_high, y_high),
-            (255, 255, 0),
+            (255, 255, 0) if center is not None else (0, 0, 255),
             2,
         )
-    if len(centers) >= 2:
-        cv2.polylines(
-            display,
-            [np.array(centers, dtype=np.int32)],
-            False,
-            (0, 255, 255),
-            3,
-        )
+    for center in centers:
+        if center is not None:
+            cv2.circle(display, center, 3, (0, 255, 255), -1)
     return display
 
 
-def detect_white_lane(image):
+def fit_lane_track(mask, previous_x=None):
+    """Choose a bottom-connected stripe and fit its observed window centers."""
+    height, width = mask.shape
+    histogram = np.count_nonzero(mask[int(height * 0.88):int(height * 0.98) + 1], axis=0)
+    candidates = np.flatnonzero(histogram >= max(3, int(height * 0.02)))
+    if not candidates.size:
+        return None
+    groups = np.split(candidates, np.flatnonzero(np.diff(candidates) > 1) + 1)
+    seeds = [float(np.mean(group)) for group in groups]
+    reference = width / 2 if previous_x is None else previous_x
+    seed = min(seeds, key=lambda x: abs(x - reference))
+    if previous_x is not None and abs(seed - previous_x) > width * 0.15:
+        return None
+    track = sliding_window_track(mask, seed)
+    centers = track[1]
+    valid = np.array([point for point in centers if point is not None])
+    # Require support near the vehicle and around the forward target.
+    target_y = int(height * 0.66)
+    if (len(valid) < 5 or centers[0] is None
+            or valid[:, 1].min() > target_y
+            or valid[:, 1].max() < height * 0.90):
+        return None
+    coefficients = np.polyfit(valid[:, 1] / height, valid[:, 0], 2)
+    residual = np.abs(np.polyval(coefficients, valid[:, 1] / height) - valid[:, 0])
+    if residual.max() > width * 0.04:
+        return None
+    target_x = float(np.polyval(coefficients, target_y / height))
+    bottom_y = int(valid[:, 1].max())
+    bottom_x = float(np.polyval(coefficients, bottom_y / height))
+    if not 0 <= target_x < width:
+        return None
+    angle = 90.0 + float(np.degrees(np.arctan2(target_x - bottom_x, bottom_y - target_y)))
+    ys = np.arange(int(valid[:, 1].min()), bottom_y + 1)
+    xs = np.clip(np.polyval(coefficients, ys / height), 0, width - 1)
+    curve = np.column_stack((xs, ys)).astype(np.int32)
+    return target_x, angle, target_y, track, curve, bottom_x
+
+
+def curve_speed_us(max_speed, angle_deg, steering_us):
+    """Reduce throttle toward neutral as path heading or steering grows."""
+    severity = min(1.0, max(abs(angle_deg - 90.0) / 30.0,
+                            abs(steering_us - STEERING_CENTER_US) / 240.0))
+    return int(round(max_speed - (max_speed - NEUTRAL_US) * 0.40 * severity))
+
+
+def detect_white_lane(image, previous_x=None):
     """Detect only the white lane and also return a yellow preview mask."""
     bev = bird_eye_view(image)
     white_mask = lane_color_mask(bev, WHITE_LOWER_HSV, WHITE_UPPER_HSV)
     yellow_mask = lane_color_mask(bev, YELLOW_LOWER_HSV, YELLOW_UPPER_HSV)
-    _, edges = detect_edges(white_mask)
-    lines = detect_hough_lines(edges)
-    center_x, angle_deg = calculate_lane_info(lines, image.shape[0])
-    if center_x is None:
+    fit = fit_lane_track(white_mask, previous_x)
+    if fit is None:
         return None, bev, white_mask, yellow_mask
+    center_x, angle_deg, target_y, track, curve, bottom_x = fit
     observation = LaneObservation(
         center_x,
         angle_deg,
-        lines,
+        np.empty((0, 1, 4), dtype=np.int32),
         bev,
         white_mask,
+        target_y,
+        track,
+        curve,
+        bottom_x,
     )
     return observation, bev, white_mask, yellow_mask
 
@@ -468,6 +516,7 @@ def main(argv=None):
             self.last_log_key = None
             self.timeout_reported = False
             self.lane_frames = 0
+            self.previous_lane_x = None
             self.subscription = self.create_subscription(
                 Image,
                 options.camera_topic,
@@ -489,13 +538,13 @@ def main(argv=None):
                 f'{STEERING_LEFT_US} us'
             )
 
-        def apply(self, steering_us, moving):
+        def apply(self, steering_us, moving, speed_us=NEUTRAL_US):
             """Apply a drive command, or do nothing in report-only mode."""
             if self.hardware is None:
                 return
             if moving:
                 self.hardware.set_steering(steering_us)
-                self.hardware.set_speed(options.speed_us)
+                self.hardware.set_speed(speed_us)
             else:
                 self.hardware.stop()
 
@@ -517,9 +566,10 @@ def main(argv=None):
                     desired_encoding='bgr8',
                 )
                 observation, bev, white_mask, yellow_mask = (
-                    detect_white_lane(image)
+                    detect_white_lane(image, self.previous_lane_x)
                 )
             except Exception as exc:
+                self.previous_lane_x = None
                 self.controller.reset()
                 self.lane_frames = 0
                 self.apply(STEERING_CENTER_US, False)
@@ -531,6 +581,7 @@ def main(argv=None):
                 return
 
             if observation is None:
+                self.previous_lane_x = None
                 self.controller.reset()
                 self.lane_frames = 0
                 self.apply(STEERING_CENTER_US, False)
@@ -541,7 +592,9 @@ def main(argv=None):
                 )
                 steering_us = STEERING_CENTER_US
                 moving = False
+                speed_us = NEUTRAL_US
             else:
+                self.previous_lane_x = observation.bottom_x
                 steering_us = self.controller.steering_pulse(
                     observation.center_x,
                     observation.angle_deg,
@@ -549,13 +602,16 @@ def main(argv=None):
                 )
                 self.lane_frames += 1
                 moving = self.lane_frames >= LANE_CONFIRM_FRAMES
-                self.apply(steering_us, moving)
+                speed_us = curve_speed_us(options.speed_us, observation.angle_deg, steering_us)
+                if not moving:
+                    speed_us = NEUTRAL_US
+                self.apply(steering_us, moving, speed_us)
                 if moving:
                     self.report(
                         'tracking',
                         f'차선 x={observation.center_x:.1f}, '
                         f'각도={observation.angle_deg:.1f}°, '
-                        f'조향={steering_us} us, 속도={options.speed_us} us',
+                        f'조향={steering_us} us, 속도={speed_us} us',
                     )
                 else:
                     self.report(
@@ -571,29 +627,25 @@ def main(argv=None):
                         display,
                         white_mask,
                         observation.center_x,
+                        observation.track,
                     )
-                    for x1, y1, x2, y2 in observation.lines[:, 0]:
-                        cv2.line(
-                            display,
-                            (x1, y1),
-                            (x2, y2),
-                            (0, 0, 255),
-                            2,
-                        )
+                    cv2.polylines(display, [observation.curve], False, (0, 255, 255), 2)
                     cv2.circle(
                         display,
                         (
                             int(observation.center_x),
-                            int(image.shape[0] * 0.78),
+                            observation.target_y,
                         ),
                         7,
                         (0, 255, 0),
                         -1,
                     )
-                status = 'DRIVE' if moving else 'STOP: LANE LOST'
+                status = ('DRIVE' if options.drive else 'DRY RUN') if moving else (
+                    'STOP: LANE LOST' if observation is None else 'STOP: CONFIRMING'
+                )
                 cv2.putText(
                     display,
-                    f'{status} steer={steering_us} us',
+                    f'{status} steer={steering_us} speed={speed_us} us',
                     (20, 40),
                     cv2.FONT_HERSHEY_SIMPLEX,
                     0.65,
@@ -602,7 +654,7 @@ def main(argv=None):
                 )
                 cv2.putText(
                     display,
-                    'CYAN window  YELLOW track  RED Hough  GREEN target',
+                    'CYAN valid  RED missing  YELLOW fit  GREEN steering target',
                     (20, 70),
                     cv2.FONT_HERSHEY_SIMPLEX,
                     0.45,
@@ -620,6 +672,7 @@ def main(argv=None):
             if time.monotonic() - reference <= IMAGE_TIMEOUT_SEC:
                 return
             self.controller.reset()
+            self.previous_lane_x = None
             self.lane_frames = 0
             self.apply(STEERING_CENTER_US, False)
             if not self.timeout_reported:

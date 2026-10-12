@@ -1,7 +1,7 @@
 """Unit tests for white-lane detection and steering conversion."""
 
 import unittest
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 from camera_lane_follow import (
     LaneController,
@@ -18,6 +18,8 @@ from camera_lane_follow import (
     detect_edges,
     detect_white_lane,
     draw_sliding_windows,
+    fit_lane_track,
+    curve_speed_us,
     lane_color_mask,
     sliding_window_track,
     write_status_log,
@@ -123,6 +125,77 @@ class LaneDetectionTests(unittest.TestCase):
 
         self.assertTrue(np.any(np.all(display == (255, 255, 0), axis=2)))
         self.assertTrue(np.any(np.all(display == (255, 0, 255), axis=2)))
+
+
+class CurveTrackingTests(unittest.TestCase):
+    """Exercise the actual mask-to-steering path on synthetic road curves."""
+
+    @staticmethod
+    def road_mask(direction=0, width=640, height=480):
+        mask = np.zeros((height, width), dtype=np.uint8)
+        for y in range(int(height * 0.58), int(height * 0.98) + 1):
+            progress = (0.98 - y / height) / 0.40
+            x = int(width * (0.5 + direction * 0.18 * progress ** 2))
+            radius = max(3, int(width * 0.01))
+            mask[y, x - radius:x + radius + 1] = 255
+        return mask
+
+    def test_visible_left_and_right_curves_control_in_matching_direction(self):
+        for direction in (-1, 0, 1):
+            with self.subTest(direction=direction):
+                mask = self.road_mask(direction)
+                image = np.repeat(mask[:, :, None], 3, axis=2)
+                with patch('camera_lane_follow.bird_eye_view', side_effect=lambda value: value):
+                    observation, _, _, _ = detect_white_lane(image)
+                self.assertIsNotNone(observation)
+                controller = LaneController()
+                pulse = controller.steering_pulse(observation.center_x, observation.angle_deg, 640)
+                speed = curve_speed_us(1600, observation.angle_deg, pulse)
+                if direction == 0:
+                    self.assertEqual(pulse, STEERING_CENTER_US)
+                    self.assertEqual(speed, 1600)
+                else:
+                    self.assertGreater((STEERING_CENTER_US - pulse) * direction, 0)
+                    self.assertLess(speed, 1600)
+                self.assertGreater(observation.track[2].size, 0)
+                self.assertAlmostEqual(observation.center_x,
+                                       observation.curve[observation.curve[:, 1] == observation.target_y, 0][0],
+                                       delta=1)
+
+    def test_empty_and_short_tracks_do_not_produce_a_target(self):
+        mask = np.zeros((480, 640), dtype=np.uint8)
+        self.assertIsNone(fit_lane_track(mask))
+        mask[430:471, 310:331] = 255
+        self.assertIsNone(fit_lane_track(mask))
+
+    def test_missing_window_has_no_fabricated_center(self):
+        mask = self.road_mask()
+        mask[350:375] = 0
+        track = sliding_window_track(mask, 320)
+        self.assertIn(None, track[1])
+        display = draw_sliding_windows(np.zeros((480, 640, 3), dtype=np.uint8), mask, 320, track)
+        self.assertTrue(np.any(np.all(display == (0, 0, 255), axis=2)))
+
+    def test_previous_lane_selects_same_stripe_among_two_candidates(self):
+        mask = np.zeros((480, 640), dtype=np.uint8)
+        mask[278:471, 190:211] = 255
+        mask[278:471, 430:451] = 255
+        self.assertAlmostEqual(fit_lane_track(mask, 200)[0], 200, delta=1)
+        self.assertAlmostEqual(fit_lane_track(mask, 440)[0], 440, delta=1)
+        self.assertIsNone(fit_lane_track(mask, 50))
+
+    def test_smaller_resolution_retains_curve_direction(self):
+        fit = fit_lane_track(self.road_mask(1, 320, 240))
+        self.assertIsNotNone(fit)
+        self.assertGreater(fit[0], 160)
+        self.assertGreater(fit[1], 90)
+
+    def test_curve_speed_respects_lower_user_speed_and_neutral(self):
+        for speed in (1500, 1540, 1560, 1600):
+            for angle in (30, 90, 150):
+                result = curve_speed_us(speed, angle, 1880)
+                self.assertGreaterEqual(result, 1500)
+                self.assertLessEqual(result, speed)
 
 
 class LaneControllerTests(unittest.TestCase):
