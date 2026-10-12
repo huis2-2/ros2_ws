@@ -271,7 +271,8 @@ def sliding_window_track(mask, initial_x):
             misses = 0
         else:
             centers.append(None)
-            misses += 1
+            if history:
+                misses += 1
             if misses >= 2 and history:
                 # Do not bridge large unseen regions onto an unrelated marking.
                 break
@@ -303,28 +304,33 @@ def draw_sliding_windows(image, mask, initial_x, track=None):
 def fit_lane_track(mask, previous_x=None):
     """Accept full tracks or short, bottom-supported partial tracks."""
     height, width = mask.shape
-    histogram = np.count_nonzero(mask[int(height * 0.85):], axis=0)
-    candidates = np.flatnonzero(histogram >= max(3, int(height * 0.015)))
-    if not candidates.size:
-        return None
-    groups = np.split(candidates, np.flatnonzero(np.diff(candidates) > 1)+1)
-    seeds = [float(np.mean(g)) for g in groups if g[-1]-g[0] < width*0.18]
+    # Seed from the lowest band that has white, so a stripe that only
+    # appears higher up or at the side of the image is still followed.
+    seeds = []
+    band_top = int(height * 0.85)
+    while not seeds and band_top >= int(height * ROI_TOP_RATIO):
+        histogram = np.count_nonzero(mask[band_top:band_top + int(height * 0.15)], axis=0)
+        candidates = np.flatnonzero(histogram >= max(3, int(height * 0.015)))
+        if candidates.size:
+            groups = np.split(candidates, np.flatnonzero(np.diff(candidates) > 1)+1)
+            seeds = [float(np.mean(g)) for g in groups if g[-1]-g[0] < width*0.18]
+        band_top -= int(height * 0.075)
     if not seeds:
         return None
     reference = width/2 if previous_x is None else previous_x
     seed = min(seeds, key=lambda x: abs(x-reference))
-    if previous_x is not None and abs(seed-previous_x) > width*0.25:
-        return None
     track = sliding_window_track(mask, seed)
     valid = np.array([point for point in track[1] if point is not None])
-    if len(valid) < 3:
+    if len(valid) < 2:
         return None
     top_y, bottom_y = int(valid[:,1].min()), int(valid[:,1].max())
-    if bottom_y < height*0.85 or bottom_y-top_y < height*0.09:
+    if bottom_y-top_y < height*0.04:
         return None
-    partial = len(valid) < 5 or top_y > height*0.66
+    partial = len(valid) < 5 or top_y > height*0.66 or bottom_y < height*0.85
     # Partial tracks use a line and an observed target: no blind extrapolation.
     target_y = max(int(height*0.66), top_y)
+    if target_y >= bottom_y:
+        target_y = top_y
     coefficients = np.polyfit(valid[:,1]/height, valid[:,0], 1 if partial else 2)
     residual = np.abs(np.polyval(coefficients, valid[:,1]/height)-valid[:,0])
     if residual.max() > width*(0.025 if partial else 0.04):
@@ -715,13 +721,10 @@ def main(argv=None):
                 moving = self.lane_frames >= LANE_CONFIRM_FRAMES
                 speed_us = curve_speed_us(options.speed_us, observation.angle_deg, steering_us)
                 if observation.partial:
+                    # Follow any visible white stripe at curve speed.
                     self.full_frames = 0
                     if self.partial_since is None:
                         self.partial_since = time.monotonic()
-                    recent_full = (self.last_full_at is not None
-                                   and time.monotonic() - self.last_full_at < PARTIAL_MAX_SEC)
-                    moving = moving and recent_full
-                    steering_us = partial_steering(steering_us, self.last_full_steering)
                     speed_us = min(speed_us, CURVE_SPEED_US)
                 else:
                     self.partial_since = None
