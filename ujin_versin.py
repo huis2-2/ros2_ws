@@ -20,7 +20,7 @@ import numpy as np
 # ===== 조절할 제어 파라미터: 수정 후 다시 실행 =====
 # 1. 속도: 기존 실행 가능한 PWM 범위에서 먼저 조정
 STRAIGHT_SPEED_US = 1640  # 직선 기본값. --speed-us 옵션이 있으면 옵션이 우선
-CURVE_SPEED_US = 1600     # 커브/부분 검출 시 목표 저속값
+CURVE_SPEED_US = 1620     # 커브/부분 검출 시 목표 저속값
 MAX_SPEED_US = 1660       # 실행 옵션 상한. 속도를 올릴 때 별도로 확인
 
 # 2. 정상 차선 조향: 한 번에 한 값씩 변경
@@ -45,10 +45,14 @@ LANE_CONFIRM_FRAMES = 3     # 정상 차선을 연속 확인한 뒤 출발/재�
 # 5. 차선 유실 탐색: 코너에서 선이 사라지면 직전 조향보다 조금 더 선 쪽으로
 LOST_SEARCH_SEC = 1.0       # 마지막 추종 후 이 시간 동안 탐색 주행, 이후 정지
 LOST_SEARCH_EXTRA_US = 40   # 직전 조향에 더할 양. 크면 선을 지나치고 작으면 못 따라감
-LOST_SEARCH_SPEED_US = 1600  # 탐색 중 속도. CURVE_SPEED_US 이하 권장
+LOST_SEARCH_SPEED_US = 1620  # 탐색 중 속도. CURVE_SPEED_US 이하 권장
 
-# 6. 탐색창: 픽셀 값은 영상 폭에 맞춰 640px 기준에서 자동 비례
-SLIDING_WINDOW_MARGIN_PX = 65  # 기본 좌우 탐색 반폭
+# 6. 따라갈 선 선택: 흰 선이 두 줄일 때
+FOLLOW_SIDE = 'right'       # 처음 잡을 때 고를 선: 'right' 오른쪽 / 'left' 왼쪽
+MAX_TRACK_JUMP_PX = 150     # 추종 중 이보다 멀리 떨어진 선으로는 바꾸지 않음(640px 기준)
+
+# 7. 탐색창: 픽셀 값은 영상 폭에 맞춰 640px 기준에서 자동 비례
+SLIDING_WINDOW_MARGIN_PX = 45  # 기본 좌우 탐색 반폭
 MAX_WINDOW_MARGIN_PX = 130    # 커브/짧은 공백에서 넓힐 최대 반폭
 
 
@@ -61,6 +65,7 @@ def validate_control_params():
         PARTIAL_MAX_CHANGE_US, PARTIAL_NEW_WEIGHT, PARTIAL_MAX_SEC,
         LANE_CONFIRM_FRAMES, SLIDING_WINDOW_MARGIN_PX, MAX_WINDOW_MARGIN_PX,
         LOST_SEARCH_SEC, LOST_SEARCH_SPEED_US, LOST_SEARCH_EXTRA_US,
+        MAX_TRACK_JUMP_PX,
     )
     if not all(isinstance(v, (float, int)) and math.isfinite(v) for v in numeric):
         raise ValueError('제어 파라미터는 유한한 숫자여야 합니다')
@@ -76,6 +81,8 @@ def validate_control_params():
         raise ValueError('부분 검출 제어값 범위를 확인하세요')
     if not isinstance(LANE_CONFIRM_FRAMES, int) or LANE_CONFIRM_FRAMES < 1:
         raise ValueError('LANE_CONFIRM_FRAMES는 1 이상의 정수여야 합니다')
+    if FOLLOW_SIDE not in ('right', 'left') or MAX_TRACK_JUMP_PX <= 0:
+        raise ValueError("FOLLOW_SIDE는 'right'/'left', MAX_TRACK_JUMP_PX는 양수여야 합니다")
     if LOST_SEARCH_EXTRA_US < 0:
         raise ValueError('LOST_SEARCH_EXTRA_US는 0 이상이어야 합니다')
     if LOST_SEARCH_SEC < 0 or not 1500 <= LOST_SEARCH_SPEED_US <= MAX_SPEED_US:
@@ -345,8 +352,14 @@ def fit_lane_track(mask, previous_x=None):
         band_top -= int(height * 0.075)
     if not seeds:
         return None
-    reference = width/2 if previous_x is None else previous_x
-    seed = min(seeds, key=lambda x: abs(x-reference))
+    if previous_x is None:
+        # New acquisition: take the configured stripe of a double line.
+        seed = max(seeds) if FOLLOW_SIDE == 'right' else min(seeds)
+    else:
+        seed = min(seeds, key=lambda x: abs(x-previous_x))
+        if abs(seed - previous_x) > MAX_TRACK_JUMP_PX * width / 640:
+            # Our stripe is hidden; do not switch to the neighbouring one.
+            return None
     track = sliding_window_track(mask, seed)
     valid = np.array([point for point in track[1] if point is not None])
     if len(valid) < 2:
