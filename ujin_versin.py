@@ -42,7 +42,11 @@ PARTIAL_MAX_SEC = 0.8       # 마지막 정상 차선 이후 부분 추종 허�
                            # 부분 선만 보이는 상태에서 새로 출발하지 않음
 LANE_CONFIRM_FRAMES = 3     # 정상 차선을 연속 확인한 뒤 출발/재출발
 
-# 5. 탐색창: 픽셀 값은 영상 폭에 맞춰 640px 기준에서 자동 비례
+# 5. 차선 유실 탐색: 코너에서 선이 사라지면 마지막으로 본 쪽으로 최대 조향
+LOST_SEARCH_SEC = 1.0       # 마지막 추종 후 이 시간 동안 탐색 주행, 이후 정지
+LOST_SEARCH_SPEED_US = 1590  # 탐색 중 속도. CURVE_SPEED_US 이하 권장
+
+# 6. 탐색창: 픽셀 값은 영상 폭에 맞춰 640px 기준에서 자동 비례
 SLIDING_WINDOW_MARGIN_PX = 45  # 기본 좌우 탐색 반폭
 MAX_WINDOW_MARGIN_PX = 100    # 커브/짧은 공백에서 넓힐 최대 반폭
 
@@ -55,6 +59,7 @@ def validate_control_params():
         MAX_ANGULAR, TURN_SLOW_START, TURN_SLOW_FULL,
         PARTIAL_MAX_CHANGE_US, PARTIAL_NEW_WEIGHT, PARTIAL_MAX_SEC,
         LANE_CONFIRM_FRAMES, SLIDING_WINDOW_MARGIN_PX, MAX_WINDOW_MARGIN_PX,
+        LOST_SEARCH_SEC, LOST_SEARCH_SPEED_US,
     )
     if not all(isinstance(v, (float, int)) and math.isfinite(v) for v in numeric):
         raise ValueError('제어 파라미터는 유한한 숫자여야 합니다')
@@ -70,6 +75,8 @@ def validate_control_params():
         raise ValueError('부분 검출 제어값 범위를 확인하세요')
     if not isinstance(LANE_CONFIRM_FRAMES, int) or LANE_CONFIRM_FRAMES < 1:
         raise ValueError('LANE_CONFIRM_FRAMES는 1 이상의 정수여야 합니다')
+    if LOST_SEARCH_SEC < 0 or not 1500 <= LOST_SEARCH_SPEED_US <= MAX_SPEED_US:
+        raise ValueError('탐색 시간은 0 이상, 탐색 속도는 1500~속도상한이어야 합니다')
     if not 0 < SLIDING_WINDOW_MARGIN_PX <= MAX_WINDOW_MARGIN_PX:
         raise ValueError('0 < 기본 탐색 반폭 <= 최대 탐색 반폭이어야 합니다')
 # ===== 아래는 주행 코드 =====
@@ -596,6 +603,8 @@ def main(argv=None):
             self.last_full_at = None
             self.last_full_steering = STEERING_CENTER_US
             self.last_tracking_steering = STEERING_CENTER_US
+            self.last_tracking_at = None
+            self.last_seen_left = None
             self.subscription = self.create_subscription(
                 Image,
                 options.camera_topic,
@@ -695,21 +704,39 @@ def main(argv=None):
                             f'처리 지연으로 정지: age={age_before_output:.3f}s', True)
                 return
 
+            now = time.monotonic()
+            recently_tracked = (self.last_tracking_at is not None
+                                and now - self.last_tracking_at < LOST_SEARCH_SEC)
             if observation is None:
-                if self.last_full_at is None or time.monotonic() - self.last_full_at > PARTIAL_MAX_SEC:
+                if self.last_full_at is None or now - self.last_full_at > PARTIAL_MAX_SEC:
                     self.previous_lane_x = None
                 self.controller.reset()
                 self.lane_frames = 0
                 self.full_frames = 0
-                self.apply(STEERING_CENTER_US, False)
-                self.report(
-                    'lost',
-                    '차선 유실: 스로틀 중립, 마지막 조향 유지',
-                    warning=True,
-                )
-                steering_us = self.last_tracking_steering
-                moving = False
-                speed_us = NEUTRAL_US
+                if recently_tracked and self.last_seen_left is not None:
+                    # Corner: the stripe left the view. Turn hard toward the
+                    # side it was last seen until it comes back.
+                    steering_us = (STEERING_LEFT_US if self.last_seen_left
+                                   else STEERING_RIGHT_US)
+                    speed_us = min(LOST_SEARCH_SPEED_US, options.speed_us)
+                    moving = True
+                    self.apply(steering_us, True, speed_us)
+                    self.report(
+                        'search',
+                        f'차선 유실: {"좌" if self.last_seen_left else "우"}측 최대 조향 탐색 '
+                        f'조향={steering_us} us, 속도={speed_us} us',
+                        warning=True,
+                    )
+                else:
+                    self.apply(STEERING_CENTER_US, False)
+                    self.report(
+                        'lost',
+                        '차선 유실: 스로틀 중립, 마지막 조향 유지',
+                        warning=True,
+                    )
+                    steering_us = self.last_tracking_steering
+                    moving = False
+                    speed_us = NEUTRAL_US
             else:
                 self.previous_lane_x = observation.bottom_x
                 steering_us = self.controller.steering_pulse(
@@ -718,7 +745,8 @@ def main(argv=None):
                     image.shape[1],
                 )
                 self.lane_frames += 1
-                moving = self.lane_frames >= LANE_CONFIRM_FRAMES
+                # Reacquired during a search: keep driving without re-confirming.
+                moving = self.lane_frames >= LANE_CONFIRM_FRAMES or recently_tracked
                 speed_us = curve_speed_us(options.speed_us, observation.angle_deg, steering_us)
                 if observation.partial:
                     # Follow any visible white stripe at curve speed.
@@ -729,7 +757,7 @@ def main(argv=None):
                 else:
                     self.partial_since = None
                     self.full_frames += 1
-                    moving = self.full_frames >= LANE_CONFIRM_FRAMES
+                    moving = self.full_frames >= LANE_CONFIRM_FRAMES or recently_tracked
                     if moving:
                         self.last_full_at = time.monotonic()
                         self.last_full_steering = steering_us
@@ -738,6 +766,8 @@ def main(argv=None):
                     steering_us = self.last_tracking_steering
                 else:
                     self.last_tracking_steering = steering_us
+                    self.last_tracking_at = now
+                    self.last_seen_left = observation.bottom_x < image.shape[1] / 2.0
                 self.apply(steering_us, moving, speed_us)
                 if moving:
                     self.report(
@@ -785,6 +815,8 @@ def main(argv=None):
                 )
                 if observation is not None and observation.partial:
                     status = 'PARTIAL: SLOW' if moving else 'PARTIAL: WAIT'
+                if observation is None and moving:
+                    status = 'SEARCH LEFT' if self.last_seen_left else 'SEARCH RIGHT'
                 cv2.putText(
                     display,
                     f'{status} steer={steering_us} speed={speed_us} us',
