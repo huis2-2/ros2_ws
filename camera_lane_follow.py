@@ -39,6 +39,9 @@ LED0_ON_L = 0x06
 CAMERA_TOPIC = '/camera/image_raw'
 IMAGE_TIMEOUT_SEC = 0.5
 LANE_CONFIRM_FRAMES = 3
+SLIDING_WINDOW_COUNT = 8
+SLIDING_WINDOW_MARGIN_PX = 45
+SLIDING_WINDOW_MIN_PIXELS = 20
 
 # Steering behavior from the supplied lane follower.
 KP_LATERAL = 0.0042
@@ -161,6 +164,71 @@ def calculate_lane_info(lines, image_height):
     if not x_values or not angles:
         return None, None
     return float(np.mean(x_values)), float(np.mean(angles))
+
+
+def sliding_window_track(mask, initial_x):
+    """Track mask pixels upward from the current steering target."""
+    height, width = mask.shape
+    roi_top = int(height * 0.58)
+    roi_bottom = int(height * 0.98)
+    window_height = max(1, (roi_bottom - roi_top) // SLIDING_WINDOW_COUNT)
+    margin = max(1, int(SLIDING_WINDOW_MARGIN_PX * width / 640.0))
+    current_x = int(np.clip(initial_x, 0, width - 1))
+    nonzero_y, nonzero_x = mask.nonzero()
+    windows = []
+    centers = []
+    selected_indices = []
+
+    for window_index in range(SLIDING_WINDOW_COUNT):
+        y_high = roi_bottom - window_index * window_height
+        y_low = max(roi_top, y_high - window_height)
+        x_low = max(0, current_x - margin)
+        x_high = min(width - 1, current_x + margin)
+        windows.append((x_low, y_low, x_high, y_high))
+
+        indices = np.flatnonzero(
+            (nonzero_y >= y_low)
+            & (nonzero_y < y_high)
+            & (nonzero_x >= x_low)
+            & (nonzero_x <= x_high)
+        )
+        if indices.size >= SLIDING_WINDOW_MIN_PIXELS:
+            current_x = int(np.mean(nonzero_x[indices]))
+        centers.append((current_x, (y_low + y_high) // 2))
+        selected_indices.append(indices)
+
+    if selected_indices:
+        selected = np.concatenate(selected_indices)
+    else:
+        selected = np.empty(0, dtype=np.int64)
+    return windows, centers, nonzero_x[selected], nonzero_y[selected]
+
+
+def draw_sliding_windows(image, mask, initial_x):
+    """Overlay the active sliding windows and selected lane pixels."""
+    display = image.copy()
+    windows, centers, selected_x, selected_y = sliding_window_track(
+        mask,
+        initial_x,
+    )
+    display[selected_y, selected_x] = (255, 0, 255)
+    for x_low, y_low, x_high, y_high in windows:
+        cv2.rectangle(
+            display,
+            (x_low, y_low),
+            (x_high, y_high),
+            (255, 255, 0),
+            2,
+        )
+    if len(centers) >= 2:
+        cv2.polylines(
+            display,
+            [np.array(centers, dtype=np.int32)],
+            False,
+            (0, 255, 255),
+            3,
+        )
+    return display
 
 
 def detect_white_lane(image):
@@ -499,6 +567,11 @@ def main(argv=None):
             if options.show:
                 display = bev.copy()
                 if observation is not None:
+                    display = draw_sliding_windows(
+                        display,
+                        white_mask,
+                        observation.center_x,
+                    )
                     for x1, y1, x2, y2 in observation.lines[:, 0]:
                         cv2.line(
                             display,
@@ -526,6 +599,15 @@ def main(argv=None):
                     0.65,
                     (0, 255, 255),
                     2,
+                )
+                cv2.putText(
+                    display,
+                    'CYAN window  YELLOW track  RED Hough  GREEN target',
+                    (20, 70),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.45,
+                    (255, 255, 255),
+                    1,
                 )
                 cv2.imshow('lane follow', display)
                 cv2.imshow('white mask - steering input', white_mask)

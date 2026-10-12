@@ -17,7 +17,9 @@ from camera_lane_follow import (
     build_parser,
     detect_edges,
     detect_white_lane,
+    draw_sliding_windows,
     lane_color_mask,
+    sliding_window_track,
     write_status_log,
 )
 
@@ -92,6 +94,35 @@ class LaneDetectionTests(unittest.TestCase):
 
         self.assertGreater(int(np.count_nonzero(blurred)), 0)
         self.assertGreater(int(np.count_nonzero(edges)), 0)
+
+    def test_sliding_windows_follow_mask_pixels_upward(self):
+        """Windows should recenter as a white lane bends across the ROI."""
+        mask = np.zeros((480, 640), dtype=np.uint8)
+        for y in range(280, 470):
+            x = 320 + (470 - y) // 4
+            mask[y, x - 6:x + 7] = 255
+
+        windows, centers, selected_x, selected_y = sliding_window_track(
+            mask,
+            320,
+        )
+
+        self.assertEqual(len(windows), 8)
+        self.assertEqual(len(centers), 8)
+        self.assertGreater(selected_x.size, 0)
+        self.assertEqual(selected_x.size, selected_y.size)
+        self.assertGreater(centers[-1][0], centers[0][0])
+
+    def test_sliding_window_overlay_draws_tracking_colors(self):
+        """The preview should contain window and selected-pixel colors."""
+        image = np.zeros((480, 640, 3), dtype=np.uint8)
+        mask = np.zeros((480, 640), dtype=np.uint8)
+        mask[280:470, 314:327] = 255
+
+        display = draw_sliding_windows(image, mask, 320)
+
+        self.assertTrue(np.any(np.all(display == (255, 255, 0), axis=2)))
+        self.assertTrue(np.any(np.all(display == (255, 0, 255), axis=2)))
 
 
 class LaneControllerTests(unittest.TestCase):
