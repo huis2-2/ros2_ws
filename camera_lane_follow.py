@@ -87,7 +87,7 @@ def bird_eye_view(image):
 
 
 def lane_color_mask(image, lower_hsv, upper_hsv):
-    """Return a cleaned lower-road mask for one HSV range."""
+    """Return a cleaned rectangular lower-road mask for one HSV range."""
     hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
     mask = cv2.inRange(
         hsv,
@@ -96,13 +96,9 @@ def lane_color_mask(image, lower_hsv, upper_hsv):
     )
     height, width = mask.shape
     roi = np.zeros_like(mask)
-    polygon = np.array([[
-        (int(width * 0.08), int(height * 0.58)),
-        (int(width * 0.92), int(height * 0.58)),
-        (int(width * 0.98), int(height * 0.98)),
-        (int(width * 0.02), int(height * 0.98)),
-    ]], dtype=np.int32)
-    cv2.fillPoly(roi, polygon, 255)
+    top_left = (int(width * 0.02), int(height * 0.58))
+    bottom_right = (int(width * 0.98), int(height * 0.98))
+    cv2.rectangle(roi, top_left, bottom_right, 255, thickness=-1)
     mask = cv2.bitwise_and(mask, roi)
     kernel = np.ones((5, 5), dtype=np.uint8)
     mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)

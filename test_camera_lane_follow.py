@@ -53,6 +53,16 @@ class LaneDetectionTests(unittest.TestCase):
         self.assertEqual(int(mask[75, 320]), 0)
         self.assertEqual(int(mask[390, 320]), 255)
 
+    def test_lane_mask_uses_rectangular_roi(self):
+        """The lower ROI should retain equal width at its top and bottom."""
+        image = np.full((480, 640, 3), 255, dtype=np.uint8)
+
+        mask = lane_color_mask(image, WHITE_LOWER_HSV, WHITE_UPPER_HSV)
+
+        self.assertEqual(int(mask[300, 20]), 255)
+        self.assertEqual(int(mask[450, 20]), 255)
+        self.assertEqual(int(mask[300, 5]), 0)
+
     def test_yellow_mask_uses_calibrated_range(self):
         """The separate yellow mask should use its calibrated range."""
         image = np.zeros((480, 640, 3), dtype=np.uint8)
