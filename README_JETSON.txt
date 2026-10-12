@@ -1,6 +1,22 @@
 Jetson Orin Nano DL lane follower V3
 ====================================
 
+현재 장치의 소스 빌드 준비 (JetPack 7.2.1 / CUDA 13.2 / SM87)
+---------------------------------------------------------
+PyPI onnxruntime-gpu 1.31.0은 이 Orin에서 실제 추론 시
+cudaErrorNoKernelImageForDevice가 발생했다. Provider 목록만으로 GPU 호환성을
+판단하지 않는다. ONNX Runtime v1.23.0 소스는 다음 경로에 준비했다.
+  /home/tofu/.cache/onnxruntime-orin-v1.23.0
+실행 환경:
+  source /home/tofu/.venvs/lane-onnx/bin/activate
+빌드/설치/GPU 모델 시험:
+  cd /home/tofu/ros2_ws
+  bash build_onnxruntime_orin.sh
+현재 빌드는 스왑 활성화를 기다리는 상태다. RAM+가용 스왑이 12 GB 미만이면
+스크립트가 중단된다. 16 GB 스왑을 준비한 후 실행한다. 빌드는 수 시간이
+걸릴 수 있으며, 로그는 소스 폴더의 build-orin.log에 저장된다.
+실제 차량 주행 성공 여부는 GPU 모델 시험과 별도로 현장에서 검증해야 한다.
+
 필요한 파일
   camera_lane_follow_dl_jetson_v3.py
   lane_model.onnx
