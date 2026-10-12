@@ -12,10 +12,18 @@ cudaErrorNoKernelImageForDevice가 발생했다. Provider 목록만으로 GPU �
 빌드/설치/GPU 모델 시험:
   cd /home/tofu/ros2_ws
   bash build_onnxruntime_orin.sh
-현재 빌드는 스왑 활성화를 기다리는 상태다. RAM+가용 스왑이 12 GB 미만이면
-스크립트가 중단된다. 16 GB 스왑을 준비한 후 실행한다. 빌드는 수 시간이
+RAM+가용 스왑이 12 GB 미만이면 스크립트가 중단된다.
+16 GB 스왑을 활성화한 후 실행한다. 빌드는 수 시간이
 걸릴 수 있으며, 로그는 소스 폴더의 build-orin.log에 저장된다.
 실제 차량 주행 성공 여부는 GPU 모델 시험과 별도로 현장에서 검증해야 한다.
+이 빌드는 SM87 전용이며 CUDA NHWC, 전통 ML, Flash/Memory-efficient Attention
+최적화 커널을 제외한다. lane_model.onnx의 연산은 유지한다.
+
+GPU 시험 성공 후 간단 실행 (카메라 노드는 별도로 실행):
+  bash run_dl_lane_follow.sh
+실제 구동 옵션:
+  bash run_dl_lane_follow.sh --drive --allow-drive --speed-us 1600
+위 실행 스크립트는 ROS와 ~/.venvs/lane-onnx 환경을 자동으로 불러온다.
 
 필요한 파일
   camera_lane_follow_dl_jetson_v3.py

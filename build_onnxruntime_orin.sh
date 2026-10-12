@@ -17,12 +17,14 @@ export PATH="$ORT_ENV/bin:/usr/local/cuda/bin:$PATH"
 cd "$ORT_SOURCE"
 python tools/ci_build/build.py \
     --build_dir "$ORT_SOURCE/build/Linux" \
-    --config Release --update --build --parallel 1 --nvcc_threads 1 \
+    --config Release --update --build --parallel 3 --nvcc_threads 1 \
     --build_wheel --skip_tests --use_tensorrt \
+    --disable_ml_ops --disable_cuda_nhwc_ops \
     --cuda_home /usr/local/cuda \
     --cudnn_home /usr/lib/aarch64-linux-gnu \
     --tensorrt_home /usr/lib/aarch64-linux-gnu \
     --cmake_extra_defines CMAKE_CUDA_ARCHITECTURES=87 onnxruntime_BUILD_UNIT_TESTS=OFF \
+        onnxruntime_USE_FLASH_ATTENTION=OFF onnxruntime_USE_MEMORY_EFFICIENT_ATTENTION=OFF \
     --compile_no_warning_as_error \
     2>&1 | tee "$ORT_SOURCE/build-orin.log"
 

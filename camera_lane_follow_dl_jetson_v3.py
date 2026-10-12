@@ -516,19 +516,22 @@ def main():
                     try:
                         frame=self.bridge.imgmsg_to_cv2(msg,desired_encoding='bgr8')
                         pulse,moving,ms,status,dbg=process(frame,time.monotonic())
-                        age=(time.monotonic()-rx)*1000.
-                        reason=('LANE_LOST' if not moving else
-                                'FRAME_STALE_AFTER_INFER' if age>a.max_frame_age_ms else 'TRACKING')
-                        can_drive=moving and age<=a.max_frame_age_ms
-                        if hw:
-                            with self.hw_lock:
+                        with self.hw_lock:
+                            # Shutdown may occur while GPU inference is in flight.
+                            if not self.worker_running:
+                                return
+                            age=(time.monotonic()-rx)*1000.
+                            reason=('LANE_LOST' if not moving else
+                                    'FRAME_STALE_AFTER_INFER' if age>a.max_frame_age_ms else 'TRACKING')
+                            can_drive=moving and age<=a.max_frame_age_ms
+                            if hw:
                                 hw.command(pulse if can_drive else STEERING_CENTER_US,
                                            can_drive,a.speed_us)
-                        self.last_command=time.monotonic()
-                        self.stopped=not can_drive
+                            self.last_command=time.monotonic()
+                            self.stopped=not can_drive
                         # Render AFTER applying PWM; GUI must never delay motor control.
                         render_debug(dbg,status,pulse,ms,
-                                     'DRIVE' if can_drive else 'STOP:'+reason,age)
+                                     ('DRIVE' if hw else 'DRY RUN') if can_drive else 'STOP:'+reason,age)
                         if not can_drive and self.last_reason!=reason:
                             self.get_logger().warning(
                                 f'STOP_REASON={reason} lane={status} age={age:.1f}ms inference={segmenter.last_infer_ms:.1f}ms'
@@ -539,15 +542,19 @@ def main():
                                 f'infer={segmenter.last_infer_ms:.1f}ms total={ms:.1f}ms queue_age={age:.1f}ms'
                             )
                     except Exception as exc:
-                        if hw:
-                            with self.hw_lock:
+                        with self.hw_lock:
+                            if not self.worker_running:
+                                return
+                            if hw:
                                 hw.command(STEERING_CENTER_US,False,a.speed_us)
                         self.stopped=True
                         self.last_reason='INFERENCE_ERROR'
                         self.get_logger().error(f'inference failure: {exc}')
             def safe_stop(self,reason):
-                if hw:
-                    with self.hw_lock:
+                with self.hw_lock:
+                    if not self.worker_running:
+                        return
+                    if hw:
                         hw.command(STEERING_CENTER_US,False,a.speed_us)
                 self.stopped=True
                 if reason != self.last_reason:
@@ -561,7 +568,10 @@ def main():
                 elif time.monotonic()-self.received>a.watchdog_sec:
                     self.safe_stop('CAMERA_TIMEOUT')
             def destroy_node(self):
-                self.worker_running=False
+                with self.hw_lock:
+                    self.worker_running=False
+                    if hw:
+                        hw.command(STEERING_CENTER_US,False,a.speed_us)
                 self.worker.join(timeout=1.0)
                 return super().destroy_node()
         node=None
