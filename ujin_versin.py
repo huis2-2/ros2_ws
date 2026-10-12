@@ -2,7 +2,7 @@
 """Single-file white lane follower. Edit the parameter block below.
 
 Uses the uploaded vehicle calibration: CH8 throttle, CH9 steering,
-center=1640us, left=1880us, right=1400us. White stripe is the reference
+center=1740us, left=2000us, right=1400us. White stripe is the reference
 path as in the original; a road boundary needs a calibrated offset instead.
 
 The default mode only reports the command it would send. Pass ``--drive``
@@ -106,8 +106,8 @@ MUX_FREQ = 50
 MUX_DUTY = 10.0
 
 NEUTRAL_US = 1500
-STEERING_CENTER_US = 1640
-STEERING_LEFT_US = 1880
+STEERING_CENTER_US = 1740  # 바퀴 띄우고 실측
+STEERING_LEFT_US = 2000
 STEERING_RIGHT_US = 1400
 
 MODE1 = 0x00
@@ -931,7 +931,7 @@ def main(argv=None):
     finally:
         if hardware is not None:
             hardware.close()
-            print('ESC 중립 1500 us, 조향 중앙 1640 us')
+            print(f'ESC 중립 {NEUTRAL_US} us, 조향 중앙 {STEERING_CENTER_US} us')
         if node is not None:
             node.destroy_node()
         cv2.destroyAllWindows()
