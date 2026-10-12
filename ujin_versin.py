@@ -161,7 +161,15 @@ def bird_eye_view(image):
     return cv2.warpPerspective(image, matrix, (width, height))
 
 
-def lane_color_mask(image, lower_hsv, upper_hsv, tophat_min=0):
+def brightness_tophat(image):
+    """Return how much brighter each pixel is than its neighbourhood."""
+    value = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)[..., 2]
+    kernel = cv2.getStructuringElement(
+        cv2.MORPH_RECT, (WHITE_TOPHAT_KERNEL_PX, WHITE_TOPHAT_KERNEL_PX))
+    return cv2.morphologyEx(value, cv2.MORPH_TOPHAT, kernel)
+
+
+def lane_color_mask(image, lower_hsv, upper_hsv, tophat=None, tophat_min=0):
     """Return a cleaned rectangular lower-road mask for one HSV range."""
     hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
     mask = cv2.inRange(
@@ -169,10 +177,7 @@ def lane_color_mask(image, lower_hsv, upper_hsv, tophat_min=0):
         np.array(lower_hsv, dtype=np.uint8),
         np.array(upper_hsv, dtype=np.uint8),
     )
-    if tophat_min > 0:
-        kernel = cv2.getStructuringElement(
-            cv2.MORPH_RECT, (WHITE_TOPHAT_KERNEL_PX, WHITE_TOPHAT_KERNEL_PX))
-        tophat = cv2.morphologyEx(hsv[..., 2], cv2.MORPH_TOPHAT, kernel)
+    if tophat is not None:
         mask[tophat < tophat_min] = 0
     height, width = mask.shape
     roi = np.zeros_like(mask)
@@ -325,14 +330,18 @@ def fit_lane_track(mask, previous_x=None):
     height, width = mask.shape
     # Seed from the lowest band that has white, so a stripe that only
     # appears higher up or at the side of the image is still followed.
+    # While tracking, look through every band and keep the stripe nearest
+    # the previous one instead of jumping to a new mark lower in the image.
     seeds = []
     band_top = int(height * 0.85)
-    while not seeds and band_top >= int(height * ROI_TOP_RATIO):
+    while band_top >= int(height * ROI_TOP_RATIO):
         histogram = np.count_nonzero(mask[band_top:band_top + int(height * 0.15)], axis=0)
         candidates = np.flatnonzero(histogram >= max(3, int(height * 0.015)))
         if candidates.size:
             groups = np.split(candidates, np.flatnonzero(np.diff(candidates) > 1)+1)
-            seeds = [float(np.mean(g)) for g in groups if g[-1]-g[0] < width*0.18]
+            seeds += [float(np.mean(g)) for g in groups if g[-1]-g[0] < width*0.18]
+            if seeds and previous_x is None:
+                break
         band_top -= int(height * 0.075)
     if not seeds:
         return None
@@ -390,8 +399,11 @@ def partial_steering(candidate_us, full_steering_us):
 def detect_white_lane(image, previous_x=None):
     """Use only the white mask for steering and show yellow as a preview."""
     bev = bird_eye_view(image)
+    # Top-hat on the camera image: on the warped image the black area outside
+    # the road trapezoid made the floor at its border look like a stripe.
+    tophat = bird_eye_view(brightness_tophat(image))
     white_mask = lane_color_mask(bev, WHITE_LOWER_HSV, WHITE_UPPER_HSV,
-                                 WHITE_TOPHAT_MIN)
+                                 tophat, WHITE_TOPHAT_MIN)
     yellow_mask = lane_color_mask(bev, YELLOW_LOWER_HSV, YELLOW_UPPER_HSV)
     fit = fit_lane_track(white_mask, previous_x)
     if fit is None:
@@ -754,9 +766,11 @@ def main(argv=None):
                     speed_us = NEUTRAL_US
             else:
                 self.previous_lane_x = observation.bottom_x
+                # A short stripe cut by the image edge gives an unreliable
+                # angle that can point the wrong way; steer on position only.
                 steering_us = self.controller.steering_pulse(
                     observation.bottom_x,
-                    observation.angle_deg,
+                    90.0 if observation.partial else observation.angle_deg,
                     image.shape[1],
                 )
                 self.lane_frames += 1
