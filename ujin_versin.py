@@ -42,8 +42,9 @@ PARTIAL_MAX_SEC = 0.8       # 마지막 정상 차선 이후 부분 추종 허�
                            # 부분 선만 보이는 상태에서 새로 출발하지 않음
 LANE_CONFIRM_FRAMES = 3     # 정상 차선을 연속 확인한 뒤 출발/재출발
 
-# 5. 차선 유실 탐색: 코너에서 선이 사라지면 마지막으로 본 쪽으로 최대 조향
+# 5. 차선 유실 탐색: 코너에서 선이 사라지면 직전 조향보다 조금 더 선 쪽으로
 LOST_SEARCH_SEC = 1.0       # 마지막 추종 후 이 시간 동안 탐색 주행, 이후 정지
+LOST_SEARCH_EXTRA_US = 40   # 직전 조향에 더할 양. 크면 선을 지나치고 작으면 못 따라감
 LOST_SEARCH_SPEED_US = 1620  # 탐색 중 속도. CURVE_SPEED_US 이하 권장
 
 # 6. 탐색창: 픽셀 값은 영상 폭에 맞춰 640px 기준에서 자동 비례
@@ -59,7 +60,7 @@ def validate_control_params():
         MAX_ANGULAR, TURN_SLOW_START, TURN_SLOW_FULL,
         PARTIAL_MAX_CHANGE_US, PARTIAL_NEW_WEIGHT, PARTIAL_MAX_SEC,
         LANE_CONFIRM_FRAMES, SLIDING_WINDOW_MARGIN_PX, MAX_WINDOW_MARGIN_PX,
-        LOST_SEARCH_SEC, LOST_SEARCH_SPEED_US,
+        LOST_SEARCH_SEC, LOST_SEARCH_SPEED_US, LOST_SEARCH_EXTRA_US,
     )
     if not all(isinstance(v, (float, int)) and math.isfinite(v) for v in numeric):
         raise ValueError('제어 파라미터는 유한한 숫자여야 합니다')
@@ -75,6 +76,8 @@ def validate_control_params():
         raise ValueError('부분 검출 제어값 범위를 확인하세요')
     if not isinstance(LANE_CONFIRM_FRAMES, int) or LANE_CONFIRM_FRAMES < 1:
         raise ValueError('LANE_CONFIRM_FRAMES는 1 이상의 정수여야 합니다')
+    if LOST_SEARCH_EXTRA_US < 0:
+        raise ValueError('LOST_SEARCH_EXTRA_US는 0 이상이어야 합니다')
     if LOST_SEARCH_SEC < 0 or not 1500 <= LOST_SEARCH_SPEED_US <= MAX_SPEED_US:
         raise ValueError('탐색 시간은 0 이상, 탐색 속도는 1500~속도상한이어야 합니다')
     if not 0 < SLIDING_WINDOW_MARGIN_PX <= MAX_WINDOW_MARGIN_PX:
@@ -714,16 +717,18 @@ def main(argv=None):
                 self.lane_frames = 0
                 self.full_frames = 0
                 if recently_tracked and self.last_seen_left is not None:
-                    # Corner: the stripe left the view. Turn hard toward the
-                    # side it was last seen until it comes back.
-                    steering_us = (STEERING_LEFT_US if self.last_seen_left
-                                   else STEERING_RIGHT_US)
+                    # Corner: the stripe left the view. Keep the last turn and
+                    # add a little toward the side it was last seen; full lock
+                    # overshoots the stripe.
+                    extra = LOST_SEARCH_EXTRA_US if self.last_seen_left else -LOST_SEARCH_EXTRA_US
+                    steering_us = int(np.clip(self.last_tracking_steering + extra,
+                                              STEERING_RIGHT_US, STEERING_LEFT_US))
                     speed_us = min(LOST_SEARCH_SPEED_US, options.speed_us)
                     moving = True
                     self.apply(steering_us, True, speed_us)
                     self.report(
                         'search',
-                        f'차선 유실: {"좌" if self.last_seen_left else "우"}측 최대 조향 탐색 '
+                        f'차선 유실: {"좌" if self.last_seen_left else "우"}측 탐색 '
                         f'조향={steering_us} us, 속도={speed_us} us',
                         warning=True,
                     )
