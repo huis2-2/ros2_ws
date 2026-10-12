@@ -28,6 +28,7 @@ KP_LATERAL = 0.014        # 앞쪽 목표점(선 위)의 위치 오차 보정. �
 KP_HEADING = 0.03         # 방향 오차(도 단위) 보정. 크면 선 반대로 꺾음. 시험 간격: 0.01
 DEADBAND_PX = 8.0         # 640px 폭 기준, 이보다 작은 위치 오차는 무시
 HEADING_DEADBAND_DEG = 1.0  # 이보다 작은 방향 오차(도)는 무시
+LINE_CENTER_X_PX = 329.0  # 차 중심이 선 위에 있을 때 화면상 선 위치(640px 기준, 실측)
 MAX_ANGULAR = 2.40        # 내부 명령 정규화 상한(실제 바퀴 각도 아님)
                          # 올리면 같은 오차에서 PWM 변화가 작아짐. 우선 고정
 
@@ -463,7 +464,7 @@ class LaneController:
         if image_width <= 0 or not np.isfinite([near_x, angle_deg]).all():
             raise ValueError('Invalid steering observation')
         scale = image_width / 640.0
-        lateral_error = near_x - image_width / 2.0
+        lateral_error = near_x - LINE_CENTER_X_PX * scale
         heading_error = angle_deg - 90.0
         if abs(lateral_error) < DEADBAND_PX * scale:
             lateral_error = 0.0
