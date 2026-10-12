@@ -24,8 +24,8 @@ CURVE_SPEED_US = 1600     # 커브/부분 검출 시 목표 저속값
 MAX_SPEED_US = 1660       # 실행 옵션 상한. 속도를 올릴 때 별도로 확인
 
 # 2. 정상 차선 조향: 한 번에 한 값씩 변경
-KP_LATERAL = 0.009        # 가까운 선의 위치 오차 보정. 시험 간격: 0.0005
-KP_HEADING = 0.10         # 방향 오차(도 단위) 보정. 시험 간격: 0.01
+KP_LATERAL = 0.014        # 앞쪽 목표점(선 위)의 위치 오차 보정. 시험 간격: 0.001
+KP_HEADING = 0.03         # 방향 오차(도 단위) 보정. 크면 선 반대로 꺾음. 시험 간격: 0.01
 DEADBAND_PX = 8.0         # 640px 폭 기준, 이보다 작은 위치 오차는 무시
 HEADING_DEADBAND_DEG = 1.0  # 이보다 작은 방향 오차(도)는 무시
 MAX_ANGULAR = 2.40        # 내부 명령 정규화 상한(실제 바퀴 각도 아님)
@@ -766,10 +766,13 @@ def main(argv=None):
                     speed_us = NEUTRAL_US
             else:
                 self.previous_lane_x = observation.bottom_x
-                # A short stripe cut by the image edge gives an unreliable
-                # angle that can point the wrong way; steer on position only.
+                # Aim at a point ahead on the stripe. Steering on the near
+                # point plus a large heading term turned away from a stripe
+                # that had drifted to the side in a bend. A short stripe cut
+                # by the image edge gives an unreliable angle and far point,
+                # so steer on its near position only.
                 steering_us = self.controller.steering_pulse(
-                    observation.bottom_x,
+                    observation.bottom_x if observation.partial else observation.center_x,
                     90.0 if observation.partial else observation.angle_deg,
                     image.shape[1],
                 )
