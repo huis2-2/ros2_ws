@@ -114,8 +114,12 @@ ROI_TOP_RATIO = 0.50
 SLIDING_WINDOW_MIN_PIXELS = 20
 
 
-WHITE_LOWER_HSV = (0, 0, 225)
-WHITE_UPPER_HSV = (179, 40, 255)
+WHITE_LOWER_HSV = (0, 0, 140)
+WHITE_UPPER_HSV = (179, 45, 255)
+# A stripe must also be brighter than its surroundings (top-hat on V), which
+# rejects the wide bright floor beside the track but keeps dim, blurred stripes.
+WHITE_TOPHAT_MIN = 60
+WHITE_TOPHAT_KERNEL_PX = 41
 YELLOW_LOWER_HSV = (0, 59, 220)
 YELLOW_UPPER_HSV = (179, 255, 255)
 
@@ -157,7 +161,7 @@ def bird_eye_view(image):
     return cv2.warpPerspective(image, matrix, (width, height))
 
 
-def lane_color_mask(image, lower_hsv, upper_hsv):
+def lane_color_mask(image, lower_hsv, upper_hsv, tophat_min=0):
     """Return a cleaned rectangular lower-road mask for one HSV range."""
     hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
     mask = cv2.inRange(
@@ -165,6 +169,11 @@ def lane_color_mask(image, lower_hsv, upper_hsv):
         np.array(lower_hsv, dtype=np.uint8),
         np.array(upper_hsv, dtype=np.uint8),
     )
+    if tophat_min > 0:
+        kernel = cv2.getStructuringElement(
+            cv2.MORPH_RECT, (WHITE_TOPHAT_KERNEL_PX, WHITE_TOPHAT_KERNEL_PX))
+        tophat = cv2.morphologyEx(hsv[..., 2], cv2.MORPH_TOPHAT, kernel)
+        mask[tophat < tophat_min] = 0
     height, width = mask.shape
     roi = np.zeros_like(mask)
     top_left = (0, int(height * ROI_TOP_RATIO))
@@ -381,7 +390,8 @@ def partial_steering(candidate_us, full_steering_us):
 def detect_white_lane(image, previous_x=None):
     """Use only the white mask for steering and show yellow as a preview."""
     bev = bird_eye_view(image)
-    white_mask = lane_color_mask(bev, WHITE_LOWER_HSV, WHITE_UPPER_HSV)
+    white_mask = lane_color_mask(bev, WHITE_LOWER_HSV, WHITE_UPPER_HSV,
+                                 WHITE_TOPHAT_MIN)
     yellow_mask = lane_color_mask(bev, YELLOW_LOWER_HSV, YELLOW_UPPER_HSV)
     fit = fit_lane_track(white_mask, previous_x)
     if fit is None:
