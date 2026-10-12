@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Follow a white lane and display separate white/yellow masks.
+"""Follow the center between white/yellow road boundaries.
 
 The default mode only reports the command it would send. Pass ``--drive``
 after checking the camera image and steering direction with the wheels raised.
@@ -26,8 +26,8 @@ MUX_FREQ = 50
 MUX_DUTY = 10.0
 
 NEUTRAL_US = 1500
-SLOW_SPEED_US = 1600
-MAX_SPEED_US = 1600
+SLOW_SPEED_US = 1620
+MAX_SPEED_US = 1620
 STEERING_CENTER_US = 1640
 STEERING_LEFT_US = 1880
 STEERING_RIGHT_US = 1400
@@ -53,8 +53,8 @@ MAX_DELTA_ANGULAR = 2.35
 
 WHITE_LOWER_HSV = (0, 0, 252)
 WHITE_UPPER_HSV = (0, 116, 255)
-YELLOW_LOWER_HSV = (7, 21, 201)
-YELLOW_UPPER_HSV = (179, 255, 255)
+YELLOW_LOWER_HSV = (15, 40, 120)
+YELLOW_UPPER_HSV = (40, 255, 255)
 
 
 @dataclass
@@ -273,15 +273,59 @@ def curve_speed_us(max_speed, angle_deg, steering_us):
     """Reduce throttle toward neutral as path heading or steering grows."""
     severity = min(1.0, max(abs(angle_deg - 90.0) / 30.0,
                             abs(steering_us - STEERING_CENTER_US) / 240.0))
-    return int(round(max_speed - (max_speed - NEUTRAL_US) * 0.40 * severity))
+    return int(round(max_speed - (max_speed - NEUTRAL_US) * 0.25 * severity))
+
+
+def fit_road_center(mask, previous_x=None):
+    """Fit two separate road boundaries and steer between them."""
+    height, width = mask.shape
+    histogram = np.count_nonzero(mask[int(height * 0.88):int(height * 0.98) + 1], axis=0)
+    candidates = np.flatnonzero(histogram >= max(3, int(height * 0.02)))
+    if not candidates.size:
+        return None
+    groups = np.split(candidates, np.flatnonzero(np.diff(candidates) > 1) + 1)
+    seeds = [float(np.mean(group)) for group in groups]
+    reference = width / 2 if previous_x is None else previous_x
+    left_seeds = [x for x in seeds if x < reference]
+    right_seeds = [x for x in seeds if x > reference]
+    if not left_seeds or not right_seeds:
+        return None
+    left = fit_lane_track(mask, max(left_seeds))
+    right = fit_lane_track(mask, min(right_seeds))
+    if left is None or right is None:
+        return None
+    start = max(left[4][0, 1], right[4][0, 1])
+    end = min(left[4][-1, 1], right[4][-1, 1])
+    target_y = left[2]
+    if not start <= target_y < end:
+        return None
+    ys = np.arange(start, end + 1)
+    left_x = np.interp(ys, left[4][:, 1], left[4][:, 0])
+    right_x = np.interp(ys, right[4][:, 1], right[4][:, 0])
+    widths = right_x - left_x
+    # Reject duplicate, crossing, or implausibly narrow boundaries.
+    if np.any(widths < width * 0.20) or np.any(widths > width * 0.95):
+        return None
+    middle = (left_x + right_x) / 2
+    target_x = float(middle[target_y - start])
+    bottom_x = float(middle[-1])
+    if previous_x is not None and abs(bottom_x - previous_x) > width * 0.15:
+        return None
+    angle = 90 + float(np.degrees(np.arctan2(target_x - bottom_x, end - target_y)))
+    track = (left[3][0] + right[3][0], left[3][1] + right[3][1],
+             np.concatenate((left[3][2], right[3][2])),
+             np.concatenate((left[3][3], right[3][3])))
+    curve = np.column_stack((middle, ys)).astype(np.int32)
+    return target_x, angle, target_y, track, curve, bottom_x
 
 
 def detect_white_lane(image, previous_x=None):
-    """Detect only the white lane and also return a yellow preview mask."""
+    """Use white and yellow boundaries to follow the road center."""
     bev = bird_eye_view(image)
     white_mask = lane_color_mask(bev, WHITE_LOWER_HSV, WHITE_UPPER_HSV)
     yellow_mask = lane_color_mask(bev, YELLOW_LOWER_HSV, YELLOW_UPPER_HSV)
-    fit = fit_lane_track(white_mask, previous_x)
+    road_mask = cv2.bitwise_or(white_mask, yellow_mask)
+    fit = fit_road_center(road_mask, previous_x)
     if fit is None:
         return None, bev, white_mask, yellow_mask
     center_x, angle_deg, target_y, track, curve, bottom_x = fit
@@ -290,7 +334,7 @@ def detect_white_lane(image, previous_x=None):
         angle_deg,
         np.empty((0, 1, 4), dtype=np.int32),
         bev,
-        white_mask,
+        road_mask,
         target_y,
         track,
         curve,
@@ -530,7 +574,7 @@ def main(argv=None):
                 else '판단 로그 시험'
             )
             self.get_logger().info(
-                f'{mode}: {options.camera_topic}의 흰 차선을 기다립니다'
+                f'{mode}: {options.camera_topic}의 좌우 경계선을 기다립니다'
             )
             self.get_logger().info(
                 f'차선 감지 시 속도 CH{THROTTLE_CH}={options.speed_us} us, '
@@ -587,7 +631,7 @@ def main(argv=None):
                 self.apply(STEERING_CENTER_US, False)
                 self.report(
                     'lost',
-                    '흰 차선을 찾지 못해 중립 정지',
+                    '좌우 경계선으로 도로 중앙을 확인할 수 없어 중립 정지',
                     warning=True,
                 )
                 steering_us = STEERING_CENTER_US
@@ -625,7 +669,7 @@ def main(argv=None):
                 if observation is not None:
                     display = draw_sliding_windows(
                         display,
-                        white_mask,
+                        observation.mask,
                         observation.center_x,
                         observation.track,
                     )
@@ -654,7 +698,7 @@ def main(argv=None):
                 )
                 cv2.putText(
                     display,
-                    'CYAN valid  RED missing  YELLOW fit  GREEN steering target',
+                    'CYAN boundaries  RED missing  YELLOW center  GREEN target',
                     (20, 70),
                     cv2.FONT_HERSHEY_SIMPLEX,
                     0.45,
@@ -663,7 +707,7 @@ def main(argv=None):
                 )
                 cv2.imshow('lane follow', display)
                 cv2.imshow('white mask - steering input', white_mask)
-                cv2.imshow('yellow mask - preview only', yellow_mask)
+                cv2.imshow('yellow mask - steering input', yellow_mask)
                 cv2.waitKey(1)
 
         def check_image_timeout(self):

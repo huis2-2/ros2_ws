@@ -19,6 +19,7 @@ from camera_lane_follow import (
     detect_white_lane,
     draw_sliding_windows,
     fit_lane_track,
+    fit_road_center,
     curve_speed_us,
     lane_color_mask,
     sliding_window_track,
@@ -34,8 +35,8 @@ class LaneDetectionTests(unittest.TestCase):
     def test_requested_hsv_ranges_are_used(self):
         self.assertEqual(WHITE_LOWER_HSV, (0, 0, 252))
         self.assertEqual(WHITE_UPPER_HSV, (0, 116, 255))
-        self.assertEqual(YELLOW_LOWER_HSV, (7, 21, 201))
-        self.assertEqual(YELLOW_UPPER_HSV, (179, 255, 255))
+        self.assertEqual(YELLOW_LOWER_HSV, (15, 40, 120))
+        self.assertEqual(YELLOW_UPPER_HSV, (40, 255, 255))
 
     def test_lane_info_uses_visible_vertical_line(self):
         """A vertical lower-image line should produce its x and 90 degrees."""
@@ -143,7 +144,8 @@ class CurveTrackingTests(unittest.TestCase):
     def test_visible_left_and_right_curves_control_in_matching_direction(self):
         for direction in (-1, 0, 1):
             with self.subTest(direction=direction):
-                mask = self.road_mask(direction)
+                stripe = self.road_mask(direction)
+                mask = np.roll(stripe, -160, axis=1) | np.roll(stripe, 160, axis=1)
                 image = np.repeat(mask[:, :, None], 3, axis=2)
                 with patch('camera_lane_follow.bird_eye_view', side_effect=lambda value: value):
                     observation, _, _, _ = detect_white_lane(image)
@@ -167,6 +169,34 @@ class CurveTrackingTests(unittest.TestCase):
         self.assertIsNone(fit_lane_track(mask))
         mask[430:471, 310:331] = 255
         self.assertIsNone(fit_lane_track(mask))
+
+    def test_white_left_yellow_right_follow_center_not_boundary(self):
+        image = np.zeros((480, 640, 3), dtype=np.uint8)
+        image[278:471, 150:171] = (255, 255, 255)
+        image[278:471, 470:491] = (0, 255, 255)
+        with patch('camera_lane_follow.bird_eye_view', side_effect=lambda value: value):
+            observation, _, _, yellow = detect_white_lane(image)
+        self.assertIsNotNone(observation)
+        self.assertGreater(np.count_nonzero(yellow), 0)
+        self.assertAlmostEqual(observation.center_x, 320, delta=1)
+        pulse = LaneController().steering_pulse(observation.center_x, observation.angle_deg, 640)
+        self.assertEqual(pulse, STEERING_CENTER_US)
+
+    def test_one_boundary_cannot_be_mistaken_for_road_center(self):
+        self.assertIsNone(fit_road_center(self.road_mask()))
+
+    def test_pair_offset_steers_toward_middle(self):
+        mask = np.zeros((480, 640), dtype=np.uint8)
+        mask[278:471, 220:241] = 255
+        mask[278:471, 540:561] = 255
+        fit = fit_road_center(mask)
+        self.assertIsNotNone(fit)
+        self.assertAlmostEqual(fit[0], 390, delta=1)
+        self.assertLess(LaneController().steering_pulse(fit[0], fit[1], 640), STEERING_CENTER_US)
+
+    def test_increased_cruise_and_curve_outputs(self):
+        self.assertEqual(curve_speed_us(1620, 90, STEERING_CENTER_US), 1620)
+        self.assertEqual(curve_speed_us(1620, 120, 1400), 1590)
 
     def test_missing_window_has_no_fabricated_center(self):
         mask = self.road_mask()
@@ -256,12 +286,12 @@ class StatusLoggingTests(unittest.TestCase):
 class CommandLineTests(unittest.TestCase):
     """Check the requested standalone lane-following speed."""
 
-    def test_default_speed_is_1600_us(self):
+    def test_default_speed_is_1620_us(self):
         options = build_parser().parse_args([])
 
-        self.assertEqual(SLOW_SPEED_US, 1600)
-        self.assertEqual(MAX_SPEED_US, 1600)
-        self.assertEqual(options.speed_us, 1600)
+        self.assertEqual(SLOW_SPEED_US, 1620)
+        self.assertEqual(MAX_SPEED_US, 1620)
+        self.assertEqual(options.speed_us, 1620)
 
 
 if __name__ == '__main__':
