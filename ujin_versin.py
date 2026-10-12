@@ -25,14 +25,14 @@ MAX_SPEED_US = 1660       # 실행 옵션 상한. 속도를 올릴 때 별도로
 
 # 2. 정상 차선 조향: 한 번에 한 값씩 변경
 KP_LATERAL = 0.009        # 가까운 선의 위치 오차 보정. 시험 간격: 0.0005
-KP_HEADING = 0.18         # 방향 오차(도 단위) 보정. 시험 간격: 0.01
+KP_HEADING = 0.10         # 방향 오차(도 단위) 보정. 시험 간격: 0.01
 DEADBAND_PX = 8.0         # 640px 폭 기준, 이보다 작은 위치 오차는 무시
 HEADING_DEADBAND_DEG = 1.0  # 이보다 작은 방향 오차(도)는 무시
 MAX_ANGULAR = 2.40        # 내부 명령 정규화 상한(실제 바퀴 각도 아님)
                          # 올리면 같은 오차에서 PWM 변화가 작아짐. 우선 고정
 
 # 3. 커브 감속: severity=max(|방향오차|/30도, |조향PWM-중앙|/좌우범위)
-TURN_SLOW_START = 0.15    # 이 지표부터 감속 시작. 낮출수록 빨리 감속
+TURN_SLOW_START = 0.12    # 이 지표부터 감속 시작. 낮출수록 빨리 감속
 TURN_SLOW_FULL = 0.50     # 이 지표에서 CURVE_SPEED_US까지 감속
 
 # 4. 부분 검출: 마지막 정상 조향을 기준으로 제한적 보정
@@ -48,8 +48,8 @@ LOST_SEARCH_EXTRA_US = 40   # 직전 조향에 더할 양. 크면 선을 지나�
 LOST_SEARCH_SPEED_US = 1620  # 탐색 중 속도. CURVE_SPEED_US 이하 권장
 
 # 6. 탐색창: 픽셀 값은 영상 폭에 맞춰 640px 기준에서 자동 비례
-SLIDING_WINDOW_MARGIN_PX = 45  # 기본 좌우 탐색 반폭
-MAX_WINDOW_MARGIN_PX = 100    # 커브/짧은 공백에서 넓힐 최대 반폭
+SLIDING_WINDOW_MARGIN_PX = 65  # 기본 좌우 탐색 반폭
+MAX_WINDOW_MARGIN_PX = 130    # 커브/짧은 공백에서 넓힐 최대 반폭
 
 
 def validate_control_params():
@@ -114,8 +114,8 @@ ROI_TOP_RATIO = 0.50
 SLIDING_WINDOW_MIN_PIXELS = 20
 
 
-WHITE_LOWER_HSV = (0, 0, 200)
-WHITE_UPPER_HSV = (179, 50, 255)
+WHITE_LOWER_HSV = (0, 0, 225)
+WHITE_UPPER_HSV = (179, 40, 255)
 YELLOW_LOWER_HSV = (0, 59, 220)
 YELLOW_UPPER_HSV = (179, 255, 255)
 
@@ -615,7 +615,7 @@ def main(argv=None):
                 QoSProfile(
                     history=HistoryPolicy.KEEP_LAST,
                     depth=1,
-                    reliability=ReliabilityPolicy.BEST_EFFORT,
+                    reliability=ReliabilityPolicy.RELIABLE,
                     durability=DurabilityPolicy.VOLATILE,
                 ),
             )
