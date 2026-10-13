@@ -19,9 +19,9 @@ import numpy as np
 
 # ===== 조절할 제어 파라미터: 수정 후 다시 실행 =====
 # 1. 속도: 기존 실행 가능한 PWM 범위에서 먼저 조정
-STRAIGHT_SPEED_US = 1640  # 직선 기본값. --speed-us 옵션이 있으면 옵션이 우선
-CURVE_SPEED_US = 1620     # 커브/부분 검출 시 목표 저속값
-MAX_SPEED_US = 1660       # 실행 옵션 상한. 속도를 올릴 때 별도로 확인
+STRAIGHT_SPEED_US = 1600  # 직선 기본값. --speed-us 옵션이 있으면 옵션이 우선
+CURVE_SPEED_US = 1600   # 커브/부분 검출 시 목표 저속값
+MAX_SPEED_US = 1620       # 실행 옵션 상한. 속도를 올릴 때 별도로 확인
 
 # 2. 정상 차선 조향: 한 번에 한 값씩 변경
 KP_LATERAL = 0.014        # 앞쪽 목표점(선 위)의 위치 오차 보정. 시험 간격: 0.001
@@ -370,7 +370,7 @@ def fit_lane_track(mask, previous_x=None):
         return None
     partial = len(valid) < 5 or top_y > height*0.66 or bottom_y < height*0.85
     # Partial tracks use a line and an observed target: no blind extrapolation.
-    target_y = max(int(height*0.66), top_y)
+    target_y = max(int(height*0.75), top_y)
     if target_y >= bottom_y:
         target_y = top_y
     coefficients = np.polyfit(valid[:,1]/height, valid[:,0], 1 if partial else 2)
