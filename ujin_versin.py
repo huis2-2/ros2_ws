@@ -122,8 +122,9 @@ ROI_TOP_RATIO = 0.50
 SLIDING_WINDOW_MIN_PIXELS = 20
 
 
-WHITE_LOWER_HSV = (0, 0, 140)
-WHITE_UPPER_HSV = (179, 45, 255)
+# Calibrated with the camera brightness set to 64.
+WHITE_LOWER_HSV = (0, 0, 233)
+WHITE_UPPER_HSV = (107, 23, 255)
 # A stripe must also be brighter than its surroundings (top-hat on V), which
 # rejects the wide bright floor beside the track but keeps dim, blurred stripes.
 WHITE_TOPHAT_MIN = 60
