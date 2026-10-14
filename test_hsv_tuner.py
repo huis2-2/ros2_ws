@@ -8,7 +8,15 @@ from camera_lane_follow import (
     YELLOW_LOWER_HSV,
     YELLOW_UPPER_HSV,
 )
-from hsv_tuner import build_parser, default_hsv_range, format_hsv_values
+from hsv_tuner import (
+    BRIGHTNESS_MAX,
+    BRIGHTNESS_MIN,
+    brightness_to_trackbar,
+    build_parser,
+    default_hsv_range,
+    format_hsv_values,
+    trackbar_to_brightness,
+)
 
 
 class HsvTunerTests(unittest.TestCase):
@@ -33,6 +41,21 @@ class HsvTunerTests(unittest.TestCase):
         self.assertIn('lower=[1, 2, 3]', text)
         self.assertIn('LOWER_HSV = (1, 2, 3)', text)
         self.assertIn('UPPER_HSV = (40, 50, 60)', text)
+
+    def test_brightness_trackbar_covers_camera_range(self):
+        self.assertEqual(brightness_to_trackbar(BRIGHTNESS_MIN), 0)
+        self.assertEqual(
+            brightness_to_trackbar(BRIGHTNESS_MAX),
+            BRIGHTNESS_MAX - BRIGHTNESS_MIN,
+        )
+        self.assertEqual(trackbar_to_brightness(64), 0)
+
+    def test_brightness_trackbar_clamps_out_of_range_values(self):
+        self.assertEqual(brightness_to_trackbar(-100), 0)
+        self.assertEqual(
+            brightness_to_trackbar(100),
+            BRIGHTNESS_MAX - BRIGHTNESS_MIN,
+        )
 
 
 if __name__ == '__main__':

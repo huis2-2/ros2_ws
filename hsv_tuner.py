@@ -21,6 +21,9 @@ SOURCE_WINDOW = 'bird eye view'
 RAW_MASK_WINDOW = 'raw HSV mask'
 LANE_MASK_WINDOW = 'lane ROI mask'
 RESULT_WINDOW = 'selected lane color'
+BRIGHTNESS_TRACKBAR = 'Brightness'
+BRIGHTNESS_MIN = -64
+BRIGHTNESS_MAX = 64
 
 TRACKBARS = (
     ('H min', 179),
@@ -48,6 +51,17 @@ def format_hsv_values(lower_hsv, upper_hsv):
     )
 
 
+def brightness_to_trackbar(brightness):
+    """Convert a V4L2 brightness value to a non-negative trackbar value."""
+    brightness = max(BRIGHTNESS_MIN, min(BRIGHTNESS_MAX, brightness))
+    return brightness - BRIGHTNESS_MIN
+
+
+def trackbar_to_brightness(trackbar_value):
+    """Convert a trackbar value to the V4L2 brightness range."""
+    return trackbar_value + BRIGHTNESS_MIN
+
+
 def build_parser():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -71,13 +85,25 @@ class HsvTuner:
         self.camera_path = camera_path
         self.color = color
         self.capture = None
+        self.brightness = 0
+
+    def _set_brightness(self, trackbar_value):
+        requested = trackbar_to_brightness(trackbar_value)
+        if not self.capture.set(cv2.CAP_PROP_BRIGHTNESS, requested):
+            print(f'밝기 적용 실패: {requested}')
+            return
+
+        self.brightness = int(round(
+            self.capture.get(cv2.CAP_PROP_BRIGHTNESS)
+        ))
+        print(f'카메라 밝기: {self.brightness}')
 
     def _create_controls(self):
         lower, upper = default_hsv_range(self.color)
         initial_values = (*lower, *upper)
 
         cv2.namedWindow(CONTROL_WINDOW, cv2.WINDOW_NORMAL)
-        cv2.resizeWindow(CONTROL_WINDOW, 720, 360)
+        cv2.resizeWindow(CONTROL_WINDOW, 720, 420)
         for (name, maximum), value in zip(TRACKBARS, initial_values):
             cv2.createTrackbar(
                 name,
@@ -86,6 +112,13 @@ class HsvTuner:
                 maximum,
                 lambda _value: None,
             )
+        cv2.createTrackbar(
+            BRIGHTNESS_TRACKBAR,
+            CONTROL_WINDOW,
+            brightness_to_trackbar(self.brightness),
+            BRIGHTNESS_MAX - BRIGHTNESS_MIN,
+            self._set_brightness,
+        )
 
     def hsv_range(self):
         values = tuple(
@@ -95,14 +128,21 @@ class HsvTuner:
         return values[:3], values[3:]
 
     @staticmethod
-    def _control_panel(lower_hsv, upper_hsv):
-        panel = np.zeros((150, 720, 3), dtype=np.uint8)
+    def _control_panel(lower_hsv, upper_hsv, brightness):
+        panel = np.zeros((190, 720, 3), dtype=np.uint8)
         lines = (
             f'LOWER HSV = {lower_hsv}',
             f'UPPER HSV = {upper_hsv}',
+            f'BRIGHTNESS = {brightness} '
+            f'({BRIGHTNESS_MIN}..{BRIGHTNESS_MAX})',
             'p: print values    q or ESC: quit',
         )
-        colors = ((255, 255, 255), (255, 255, 255), (0, 255, 255))
+        colors = (
+            (255, 255, 255),
+            (255, 255, 255),
+            (0, 255, 255),
+            (0, 255, 255),
+        )
         for index, (line, color) in enumerate(zip(lines, colors)):
             cv2.putText(
                 panel,
@@ -125,6 +165,9 @@ class HsvTuner:
         self.capture.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
         self.capture.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
         self.capture.set(cv2.CAP_PROP_FPS, 30)
+        self.brightness = int(round(
+            self.capture.get(cv2.CAP_PROP_BRIGHTNESS)
+        ))
 
         lower_hsv, upper_hsv = default_hsv_range(self.color)
         print(f'{self.color} HSV 조절을 시작합니다.')
@@ -155,7 +198,11 @@ class HsvTuner:
                 cv2.imshow(RESULT_WINDOW, selected)
                 cv2.imshow(
                     CONTROL_WINDOW,
-                    self._control_panel(lower_hsv, upper_hsv),
+                    self._control_panel(
+                        lower_hsv,
+                        upper_hsv,
+                        self.brightness,
+                    ),
                 )
 
                 key = cv2.waitKey(1) & 0xFF
