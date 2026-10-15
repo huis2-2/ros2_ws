@@ -129,21 +129,18 @@ def stripe_seeds(mask, min_y_ratio, first_band_only=False):
     return seeds
 
 
-def neighbour_side(seeds, current_x, gap, current_side):
-    """Side of the other stripe: the visible one, else opposite of ours."""
+def visible_neighbour(seeds, current_x, gap):
+    """'left'/'right' if exactly one other stripe side is visible, else None."""
     left = any(x < current_x - gap for x in seeds)
     right = any(x > current_x + gap for x in seeds)
     if left != right:
         return 'left' if left else 'right'
-    return 'left' if current_side == 'right' else 'right'
+    return None
 
 
-def neighbour_stripe(seeds, old_x, gap, side, width):
+def neighbour_stripe(seeds, old_x, gap, side):
     """Nearest stripe on the avoidance side of the stripe being left."""
-    if old_x is None:
-        # Old stripe out of view: anything on the target half is the new one.
-        candidates = [x for x in seeds if (x < width / 2) == (side == 'left')]
-    elif side == 'left':
+    if side == 'left':
         candidates = [x for x in seeds if x < old_x - gap]
     else:
         candidates = [x for x in seeds if x > old_x + gap]
@@ -218,7 +215,9 @@ def main(argv=None):
             # Lane change: follow -> avoid -> merge -> follow, or blocked.
             self.state = 'follow'
             self.state_since = self.started_at
-            self.current_side = lane.FOLLOW_SIDE
+            # Which of the two stripes we are on ('left'/'right'), learned from
+            # frames that show both; None until then.
+            self.current_side = None
             self.target_side = None
             self.old_x = None
             self.last_switch_at = -math.inf
@@ -329,15 +328,12 @@ def main(argv=None):
             width = white.shape[1]
             recently_tracked = (self.last_tracking_at is not None
                                 and now - self.last_tracking_at < lane.LOST_SEARCH_SEC)
-            previous = self.track_x
-            if previous is None:
-                seeds = stripe_seeds(white, lane.ROI_TOP_RATIO, first_band_only=True)
-                if seeds:
-                    previous = max(seeds) if self.current_side == 'right' else min(seeds)
-            fit = lane.fit_lane_track(white, previous) if previous is not None else None
+            fit = lane.fit_lane_track(white, self.track_x)
             if fit is None:
                 if self.last_full_at is None or now - self.last_full_at > lane.PARTIAL_MAX_SEC:
+                    # The next stripe found may be the other one: forget the side.
                     self.track_x = None
+                    self.current_side = None
                 self.controller.reset()
                 self.lane_frames = 0
                 self.full_frames = 0
@@ -355,6 +351,11 @@ def main(argv=None):
 
             center_x, angle_deg, _, _, _, bottom_x, partial = fit
             self.track_x = bottom_x
+            seen = visible_neighbour(stripe_seeds(white, NEIGHBOR_MIN_Y_RATIO), bottom_x,
+                                     LANE_GAP_MIN_PX * width / 640)
+            if seen is not None:
+                # The other stripe is on the left, so we are on the right one.
+                self.current_side = 'right' if seen == 'left' else 'left'
             steering_us = self.controller.steering_pulse(
                 bottom_x if partial else center_x, 90.0 if partial else angle_deg, width)
             self.lane_frames += 1
@@ -375,7 +376,7 @@ def main(argv=None):
                 return fit, self.last_tracking_steering, lane.NEUTRAL_US, False
             self.tracking(steering_us, bottom_x, width)
             self.apply(steering_us, True, speed_us)
-            self.report('tracking', f'{"PARTIAL" if partial else "FULL"} [{self.current_side}] '
+            self.report('tracking', f'{"PARTIAL" if partial else "FULL"} [{self.current_side or "?"}] '
                         f'near_x={bottom_x:.1f} 각도={angle_deg:.1f}° 조향={steering_us} us '
                         f'속도={speed_us} us 장애물={format_m(self.obstacle_m)}')
             return fit, steering_us, speed_us, True
@@ -384,12 +385,20 @@ def main(argv=None):
             width = white.shape[1]
             gap = LANE_GAP_MIN_PX * width / 640
             seeds = stripe_seeds(white, NEIGHBOR_MIN_Y_RATIO)
-            self.target_side = neighbour_side(seeds, self.track_x, gap, self.current_side)
+            side = visible_neighbour(seeds, self.track_x, gap)
+            if side is None and self.current_side is not None:
+                side = 'left' if self.current_side == 'right' else 'right'
+            if side is None:
+                self.get_logger().warning(
+                    f'장애물 {format_m(self.obstacle_m)}: 옆 선 방향을 알 수 없어 정지')
+                return False
+            self.target_side = side
             self.old_x = self.track_x
             self.set_state('avoid')
             self.get_logger().warning(
-                f'장애물 {format_m(self.obstacle_m)}: {self.current_side} 선 -> '
+                f'장애물 {format_m(self.obstacle_m)}: {self.current_side or "?"} 선 -> '
                 f'{self.target_side} 선으로 회피 시작')
+            return True
 
         def avoid_step(self, white, now):
             """Steer toward the target side until the other stripe appears."""
@@ -397,11 +406,13 @@ def main(argv=None):
             scale = width / 640
             gap = LANE_GAP_MIN_PX * scale
             seeds = stripe_seeds(white, NEIGHBOR_MIN_Y_RATIO)
-            if self.old_x is not None:
-                # Keep following where the stripe we are leaving has moved to.
-                near = [x for x in seeds if abs(x - self.old_x) < gap / 2]
-                self.old_x = min(near, key=lambda x: abs(x - self.old_x)) if near else None
-            new_x = neighbour_stripe(seeds, self.old_x, gap, self.target_side, width)
+            # Follow where the stripe we are leaving has moved to. If it is
+            # lost, keep its last position: it only moves away from the target
+            # side while we turn, so it can never pass as the new stripe.
+            near = [x for x in seeds if abs(x - self.old_x) < gap / 2]
+            if near:
+                self.old_x = min(near, key=lambda x: abs(x - self.old_x))
+            new_x = neighbour_stripe(seeds, self.old_x, gap, self.target_side)
             if new_x is not None:
                 self.reset_tracking()
                 self.track_x = new_x
@@ -495,9 +506,8 @@ def main(argv=None):
                 if self.state == 'follow' and self.obstacle:
                     driving = (self.last_tracking_at is not None and self.track_x is not None
                                and now - self.last_tracking_at < 0.3)
-                    if driving and now - self.last_switch_at > SWITCH_COOLDOWN_SEC:
-                        self.start_avoid(white)
-                    else:
+                    if not (driving and now - self.last_switch_at > SWITCH_COOLDOWN_SEC
+                            and self.start_avoid(white)):
                         self.set_state('blocked')
                 result = self.avoid_step(white, now) if self.state == 'avoid' else None
                 if result is not None:
@@ -521,11 +531,11 @@ def main(argv=None):
                 cv2.polylines(display, [curve], False, (0, 255, 255), 2)
                 cv2.circle(display, (int(center_x), target_y), 7, (0, 255, 0), -1)
                 cv2.circle(display, (int(bottom_x), int(curve[-1, 1])), 7, (255, 0, 0), -1)
-            if self.state == 'avoid' and self.old_x is not None:
+            if self.state == 'avoid':
                 cv2.line(display, (int(self.old_x), display.shape[0] - 1),
                          (int(self.old_x), int(display.shape[0] * 0.7)), (0, 0, 255), 2)
             label = self.state.upper() + ('' if moving else ' STOP')
-            cv2.putText(display, f'{label} [{self.current_side}] steer={steering_us} '
+            cv2.putText(display, f'{label} [{self.current_side or "?"}] steer={steering_us} '
                         f'speed={speed_us}', (20, 40), cv2.FONT_HERSHEY_SIMPLEX,
                         0.65, (0, 255, 255), 2)
             cv2.putText(display, f'lidar front={format_m(self.obstacle_m)} '

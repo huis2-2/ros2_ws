@@ -48,8 +48,7 @@ LOST_SEARCH_SEC = 1.0       # 마지막 추종 후 이 시간 동안 탐색 주�
 LOST_SEARCH_EXTRA_US = 40   # 직전 조향에 더할 양. 크면 선을 지나치고 작으면 못 따라감
 LOST_SEARCH_SPEED_US = 1620  # 탐색 중 속도. CURVE_SPEED_US 이하 권장
 
-# 6. 따라갈 선 선택: 흰 선이 두 줄일 때
-FOLLOW_SIDE = 'right'       # 처음 잡을 때 고를 선: 'right' 오른쪽 / 'left' 왼쪽
+# 6. 따라갈 선 선택: 흰 선이 두 줄이면 차 중심(LINE_CENTER_X_PX)에 가장 가까운 선을 잡음
 MAX_TRACK_JUMP_PX = 150     # 추종 중 이보다 멀리 떨어진 선으로는 바꾸지 않음(640px 기준)
 
 # 7. 탐색창: 픽셀 값은 영상 폭에 맞춰 640px 기준에서 자동 비례
@@ -82,8 +81,8 @@ def validate_control_params():
         raise ValueError('부분 검출 제어값 범위를 확인하세요')
     if not isinstance(LANE_CONFIRM_FRAMES, int) or LANE_CONFIRM_FRAMES < 1:
         raise ValueError('LANE_CONFIRM_FRAMES는 1 이상의 정수여야 합니다')
-    if FOLLOW_SIDE not in ('right', 'left') or MAX_TRACK_JUMP_PX <= 0:
-        raise ValueError("FOLLOW_SIDE는 'right'/'left', MAX_TRACK_JUMP_PX는 양수여야 합니다")
+    if MAX_TRACK_JUMP_PX <= 0:
+        raise ValueError('MAX_TRACK_JUMP_PX는 양수여야 합니다')
     if LOST_SEARCH_EXTRA_US < 0:
         raise ValueError('LOST_SEARCH_EXTRA_US는 0 이상이어야 합니다')
     if LOST_SEARCH_SEC < 0 or not 1500 <= LOST_SEARCH_SPEED_US <= MAX_SPEED_US:
@@ -355,8 +354,9 @@ def fit_lane_track(mask, previous_x=None):
     if not seeds:
         return None
     if previous_x is None:
-        # New acquisition: take the configured stripe of a double line.
-        seed = max(seeds) if FOLLOW_SIDE == 'right' else min(seeds)
+        # New acquisition: the stripe the car is standing on is the one
+        # nearest the calibrated car-centre position.
+        seed = min(seeds, key=lambda x: abs(x - LINE_CENTER_X_PX * width / 640))
     else:
         seed = min(seeds, key=lambda x: abs(x-previous_x))
         if abs(seed - previous_x) > MAX_TRACK_JUMP_PX * width / 640:
