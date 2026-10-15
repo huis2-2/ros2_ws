@@ -25,7 +25,7 @@ import ujin_versin as lane
 # 1. 장애물 감지: LiDAR 중심 기준 거리(m). 앞 범퍼까지의 거리는 포함되지 않음
 SCAN_TOPIC = '/scan'
 FRONT_CENTER_DEG = 180.0      # 차량 정면 방향의 LiDAR 각도(기존 LiDAR 코드와 동일)
-AVOID_TRIGGER_M = 0.20        # 진행 통로 안 장애물이 이 거리 이내면 옆 선으로 회피(정지 없음)
+AVOID_TRIGGER_M = 0.40        # 진행 통로 안 장애물이 이 거리 이내면 옆 선으로 회피(정지 없음)
 CORRIDOR_HALF_WIDTH_M = 0.12  # 진행 통로 반폭. 옆 선 위 물체는 무시되도록 선 간격의 절반 이하
 LIDAR_IGNORE_BELOW_M = 0.03   # 차체 자기 반사 무시
 OBSTACLE_CONFIRM_SCANS = 2    # 연속 감지 스캔 수(오검출 방지)
