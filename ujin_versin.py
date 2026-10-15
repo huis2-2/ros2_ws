@@ -20,16 +20,16 @@ import numpy as np
 # ===== 조절할 제어 파라미터: 수정 후 다시 실행 =====
 # 1. 속도: 기존 실행 가능한 PWM 범위에서 먼저 조정
 STRAIGHT_SPEED_US = 1600  # 직선 기본값. --speed-us 옵션이 있으면 옵션이 우선
-CURVE_SPEED_US = 1600   # 커브/부분 검출 시 목표 저속값
-MAX_SPEED_US = 1620       # 실행 옵션 상한. 속도를 올릴 때 별도로 확인
+CURVE_SPEED_US = 1593   # 커브/부분 검출 시 목표 저속값
+MAX_SPEED_US = 1601     # 실행 옵션 상한. 속도를 올릴 때 별도로 확인
 
 # 2. 정상 차선 조향: 한 번에 한 값씩 변경
-KP_LATERAL = 0.014        # 앞쪽 목표점(선 위)의 위치 오차 보정. 시험 간격: 0.001
-KP_HEADING = 0.03         # 방향 오차(도 단위) 보정. 크면 선 반대로 꺾음. 시험 간격: 0.01
+KP_LATERAL = 0.016        # 앞쪽 목표점(선 위)의 위치 오차 보정. 시험 간격: 0.001
+KP_HEADING = 0.00        # 방향 오차(도 단위) 보정. 크면 선 반대로 꺾음. 시험 간격: 0.01
 DEADBAND_PX = 8.0         # 640px 폭 기준, 이보다 작은 위치 오차는 무시
 HEADING_DEADBAND_DEG = 1.0  # 이보다 작은 방향 오차(도)는 무시
-LINE_CENTER_X_PX = 329.0  # 차 중심이 선 위에 있을 때 화면상 선 위치(640px 기준, 실측)
-MAX_ANGULAR = 2.40        # 내부 명령 정규화 상한(실제 바퀴 각도 아님)
+LINE_CENTER_X_PX = 280.0  # 차 중심이 선 위에 있을 때 화면상 선 위치(640px 기준, 실측)
+MAX_ANGULAR = 2.0        # 내부 명령 정규화 상한(실제 바퀴 각도 아님)
                          # 올리면 같은 오차에서 PWM 변화가 작아짐. 우선 고정
 
 # 3. 커브 감속: severity=max(|방향오차|/30도, |조향PWM-중앙|/좌우범위)
@@ -46,7 +46,7 @@ LANE_CONFIRM_FRAMES = 3     # 정상 차선을 연속 확인한 뒤 출발/재�
 # 5. 차선 유실 탐색: 코너에서 선이 사라지면 직전 조향보다 조금 더 선 쪽으로
 LOST_SEARCH_SEC = 1.0       # 마지막 추종 후 이 시간 동안 탐색 주행, 이후 정지
 LOST_SEARCH_EXTRA_US = 40   # 직전 조향에 더할 양. 크면 선을 지나치고 작으면 못 따라감
-LOST_SEARCH_SPEED_US = 1620  # 탐색 중 속도. CURVE_SPEED_US 이하 권장
+LOST_SEARCH_SPEED_US = 1588  # 탐색 중 속도. CURVE_SPEED_US 이하 권장
 
 # 6. 따라갈 선 선택: 흰 선이 두 줄이면 차 중심(LINE_CENTER_X_PX)에 가장 가까운 선을 잡음
 MAX_TRACK_JUMP_PX = 150     # 추종 중 이보다 멀리 떨어진 선으로는 바꾸지 않음(640px 기준)
@@ -121,12 +121,11 @@ ROI_TOP_RATIO = 0.50
 SLIDING_WINDOW_MIN_PIXELS = 20
 
 
-# Calibrated with the camera brightness set to 64.
-WHITE_LOWER_HSV = (0, 0, 233)
-WHITE_UPPER_HSV = (107, 23, 255)
+WHITE_LOWER_HSV = (0, 0, 172)
+WHITE_UPPER_HSV = (111, 27, 255)
 # A stripe must also be brighter than its surroundings (top-hat on V), which
 # rejects the wide bright floor beside the track but keeps dim, blurred stripes.
-WHITE_TOPHAT_MIN = 60
+WHITE_TOPHAT_MIN = 0
 WHITE_TOPHAT_KERNEL_PX = 41
 YELLOW_LOWER_HSV = (0, 59, 220)
 YELLOW_UPPER_HSV = (179, 255, 255)
@@ -305,7 +304,7 @@ def sliding_window_track(mask, initial_x):
             centers.append(None)
             if history:
                 misses += 1
-            if misses >= 2 and history:
+            if misses >= 3 and history:
                 # Do not bridge large unseen regions onto an unrelated marking.
                 break
     selected = np.concatenate(selected_indices) if selected_indices else np.empty(0, dtype=np.int64)
@@ -371,7 +370,7 @@ def fit_lane_track(mask, previous_x=None):
         return None
     partial = len(valid) < 5 or top_y > height*0.66 or bottom_y < height*0.85
     # Partial tracks use a line and an observed target: no blind extrapolation.
-    target_y = max(int(height*0.75), top_y)
+    target_y = max(int(height*0.70), top_y)
     if target_y >= bottom_y:
         target_y = top_y
     coefficients = np.polyfit(valid[:,1]/height, valid[:,0], 1 if partial else 2)
@@ -417,8 +416,8 @@ def detect_white_lane(image, previous_x=None):
     # Top-hat on the camera image: on the warped image the black area outside
     # the road trapezoid made the floor at its border look like a stripe.
     tophat = bird_eye_view(brightness_tophat(image))
-    white_mask = lane_color_mask(bev, WHITE_LOWER_HSV, WHITE_UPPER_HSV,
-                                 tophat, WHITE_TOPHAT_MIN)
+    white_mask = lane_color_mask(bev, WHITE_LOWER_HSV, WHITE_UPPER_HSV)
+                                 
     yellow_mask = lane_color_mask(bev, YELLOW_LOWER_HSV, YELLOW_UPPER_HSV)
     fit = fit_lane_track(white_mask, previous_x)
     if fit is None:
