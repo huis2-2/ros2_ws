@@ -37,7 +37,7 @@ WHITE_V_MIN = 120             # 흰 선 최소 밝기(V). ujin_versin의 172보�
 WHITE_TOPHAT_MIN = 50         # 주변보다 이만큼 밝아야 선. 낮은 V에서 넓은 밝은 바닥을 걸러냄
 
 # 2. 회피 주행: 옆 선이 보일 때까지 고정 조향
-AVOID_STEER_US = 260          # 중앙 대비 회피 조향량(us). 크면 급하게 꺾음
+AVOID_STEER_RATIO = 1.0       # 회피 조향: 각 방향 최대 조향 대비 비율(0~1). 크면 급하게 꺾음
 AVOID_SPEED_US = 1590         # 회피/합류 중 속도
 AVOID_MAX_SEC = 2.0           # 이 시간 안에 옆 선을 못 찾으면 보이는 선으로 일반 추종
 LANE_GAP_MIN_PX = 90          # 기존 선과 이만큼 떨어진 흰 선만 옆 선으로 인정(640px 기준)
@@ -46,7 +46,7 @@ NEIGHBOR_MIN_Y_RATIO = 0.70   # 옆 선은 화면 아래쪽(이 비율 아래)�
 # 2-1. 노란 경계선: 장애물 감지 순간 화면에 보이는 노란선의 반대편으로 회피
 
 # 3. 새 선 합류: 선까지 남은 거리에 맞춘 진입 각도로 다가가 선을 지나치지 않게 함
-MERGE_MAX_STEER_US = 240      # 합류 중 중앙 대비 최대 조향량(us). 크면 선을 지나침
+MERGE_MAX_STEER_RATIO = 0.92  # 합류 중 각 방향 최대 조향 대비 상한 비율(0~1)
 MERGE_APPROACH_DEG_PER_PX = 0.15  # 새 선까지 1px당 허용 진입 각도(도). 크면 늦게 펴서 지나침
 MERGE_APPROACH_MAX_DEG = 15.0  # 새 선에 다가가는 최대 진입 각도(도)
 MERGE_HEADING_KP = 0.08       # 진입 각도 오차(도)당 조향 명령. 크면 좌우로 흔들림
@@ -60,9 +60,9 @@ def validate_avoid_params():
         FRONT_CENTER_DEG, AVOID_TRIGGER_M, CORRIDOR_HALF_WIDTH_M,
         LIDAR_IGNORE_BELOW_M, SCAN_TIMEOUT_SEC,
         WHITE_V_MIN, WHITE_TOPHAT_MIN,
-        AVOID_STEER_US, AVOID_SPEED_US, AVOID_MAX_SEC, LANE_GAP_MIN_PX,
+        AVOID_STEER_RATIO, AVOID_SPEED_US, AVOID_MAX_SEC, LANE_GAP_MIN_PX,
         NEIGHBOR_MIN_Y_RATIO,
-        MERGE_MAX_STEER_US, MERGE_APPROACH_DEG_PER_PX, MERGE_APPROACH_MAX_DEG,
+        MERGE_MAX_STEER_RATIO, MERGE_APPROACH_DEG_PER_PX, MERGE_APPROACH_MAX_DEG,
         MERGE_HEADING_KP, MERGE_DONE_PX, MERGE_DONE_DEG, MERGE_MAX_SEC,
     )
     if not all(isinstance(v, (float, int)) and math.isfinite(v) for v in numeric):
@@ -75,12 +75,8 @@ def validate_avoid_params():
         value = globals()[name]
         if not isinstance(value, int) or value < 1:
             raise ValueError(f'{name}는 1 이상의 정수여야 합니다')
-    if not 0 < AVOID_STEER_US <= lane.STEERING_LEFT_US - lane.STEERING_CENTER_US:
-        raise ValueError('AVOID_STEER_US가 조향 범위를 벗어납니다')
-    if not 0 < AVOID_STEER_US <= lane.STEERING_CENTER_US - lane.STEERING_RIGHT_US:
-        raise ValueError('AVOID_STEER_US가 조향 범위를 벗어납니다')
-    if not 0 < MERGE_MAX_STEER_US:
-        raise ValueError('MERGE_MAX_STEER_US는 양수여야 합니다')
+    if not 0 < AVOID_STEER_RATIO <= 1 or not 0 < MERGE_MAX_STEER_RATIO <= 1:
+        raise ValueError('AVOID_STEER_RATIO와 MERGE_MAX_STEER_RATIO는 0~1이어야 합니다')
     if not 0 <= WHITE_V_MIN <= 255 or not 0 <= WHITE_TOPHAT_MIN <= 255:
         raise ValueError('흰 선 밝기 값은 0~255여야 합니다')
     if (MERGE_APPROACH_DEG_PER_PX <= 0 or MERGE_APPROACH_MAX_DEG <= 0
@@ -203,10 +199,15 @@ def neighbour_stripe(seeds, old_x, gap, side):
     return max(candidates) if side == 'left' else min(candidates)
 
 
-def side_steering(side, amount_us):
-    """Steering pulse turned toward one side by amount_us."""
-    pulse = lane.STEERING_CENTER_US + (amount_us if side == 'left' else -amount_us)
-    return int(np.clip(pulse, lane.STEERING_RIGHT_US, lane.STEERING_LEFT_US))
+def side_steering(side, ratio):
+    """Steering pulse turned toward one side by a fraction of that side's lock.
+
+    The left and right ranges differ in microseconds, so a fixed offset would
+    turn one way less sharply than the other.
+    """
+    end = lane.STEERING_LEFT_US if side == 'left' else lane.STEERING_RIGHT_US
+    pulse = lane.STEERING_CENTER_US + ratio * (end - lane.STEERING_CENTER_US)
+    return int(round(np.clip(pulse, lane.STEERING_RIGHT_US, lane.STEERING_LEFT_US)))
 
 
 def format_m(distance):
@@ -467,7 +468,7 @@ def main(argv=None):
                 self.current_side = None
                 self.set_state('follow')
                 return None
-            steering_us = side_steering(self.target_side, AVOID_STEER_US)
+            steering_us = side_steering(self.target_side, AVOID_STEER_RATIO)
             speed_us = min(AVOID_SPEED_US, options.speed_us)
             self.tracking(steering_us, None, width)
             self.apply(steering_us, True, speed_us)
@@ -502,8 +503,8 @@ def main(argv=None):
                 min(abs(command), lane.MAX_ANGULAR) / lane.MAX_ANGULAR
                 * (endpoint - lane.STEERING_CENTER_US))
             steering_us = int(round(np.clip(steering_us,
-                                            lane.STEERING_CENTER_US - MERGE_MAX_STEER_US,
-                                            lane.STEERING_CENTER_US + MERGE_MAX_STEER_US)))
+                                            side_steering('right', MERGE_MAX_STEER_RATIO),
+                                            side_steering('left', MERGE_MAX_STEER_RATIO))))
             speed_us = min(AVOID_SPEED_US, options.speed_us)
             self.tracking(steering_us, bottom_x, width)
             self.apply(steering_us, True, speed_us)
