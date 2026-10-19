@@ -12,22 +12,27 @@ class NearbyYellowSideTests(unittest.TestCase):
         return mask
 
     def test_close_yellow_on_left(self):
-        self.assertEqual(avoid.nearby_yellow_side(self.yellow_mask(180), 320), 'left')
-        self.assertEqual(avoid.yellow_avoidance_side(self.yellow_mask(180), 320), 'right')
+        self.assertEqual(avoid.visible_yellow_side(self.yellow_mask(180)), 'left')
+        self.assertEqual(avoid.yellow_avoidance_side(self.yellow_mask(180)), 'right')
 
     def test_close_yellow_on_right(self):
-        self.assertEqual(avoid.nearby_yellow_side(self.yellow_mask(450), 320), 'right')
-        self.assertEqual(avoid.yellow_avoidance_side(self.yellow_mask(450), 320), 'left')
+        self.assertEqual(avoid.visible_yellow_side(self.yellow_mask(450)), 'right')
+        self.assertEqual(avoid.yellow_avoidance_side(self.yellow_mask(450)), 'left')
 
-    def test_distant_yellow_does_not_override_avoidance(self):
-        self.assertIsNone(avoid.nearby_yellow_side(self.yellow_mask(20), 320))
-        self.assertIsNone(avoid.yellow_avoidance_side(self.yellow_mask(20), 320))
+    def test_yellow_at_screen_edge_still_controls_avoidance(self):
+        self.assertEqual(avoid.visible_yellow_side(self.yellow_mask(20)), 'left')
+        self.assertEqual(avoid.yellow_avoidance_side(self.yellow_mask(20)), 'right')
 
     def test_yellow_high_in_image_is_detected_without_roi(self):
         mask = np.zeros((480, 640), dtype=np.uint8)
         mask[0:20, 180:188] = 255
-        self.assertEqual(avoid.nearby_yellow_side(mask, 320), 'left')
-        self.assertEqual(avoid.yellow_avoidance_side(mask, 320), 'right')
+        self.assertEqual(avoid.visible_yellow_side(mask), 'left')
+        self.assertEqual(avoid.yellow_avoidance_side(mask), 'right')
+
+    def test_no_yellow_has_no_avoidance_direction(self):
+        mask = np.zeros((480, 640), dtype=np.uint8)
+        self.assertIsNone(avoid.visible_yellow_side(mask))
+        self.assertIsNone(avoid.yellow_avoidance_side(mask))
 
 
 if __name__ == '__main__':

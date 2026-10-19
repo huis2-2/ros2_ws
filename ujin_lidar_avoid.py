@@ -39,8 +39,7 @@ AVOID_MAX_SEC = 2.0           # 이 시간 안에 옆 선을 못 찾으면 보�
 LANE_GAP_MIN_PX = 90          # 기존 선과 이만큼 떨어진 흰 선만 옆 선으로 인정(640px 기준)
 NEIGHBOR_MIN_Y_RATIO = 0.70   # 옆 선은 화면 아래쪽(이 비율 아래)에서만 찾음
 
-# 2-1. 노란 경계선: 장애물 감지 순간 가까운 노란선의 반대편으로 회피
-YELLOW_NEAR_MAX_GAP_PX = 220    # 현재 주행선과의 최대 가로 거리(640px 기준)
+# 2-1. 노란 경계선: 장애물 감지 순간 화면에 보이는 노란선의 반대편으로 회피
 
 # 3. 새 선 합류: 새 선이 차 중심에 올 때까지 조향 제한
 MERGE_MAX_STEER_US = 220      # 합류 중 중앙 대비 최대 조향량(us). 크면 선을 지나침
@@ -53,7 +52,7 @@ def validate_avoid_params():
         FRONT_CENTER_DEG, AVOID_TRIGGER_M, CORRIDOR_HALF_WIDTH_M,
         LIDAR_IGNORE_BELOW_M, SCAN_TIMEOUT_SEC,
         AVOID_STEER_US, AVOID_SPEED_US, AVOID_MAX_SEC, LANE_GAP_MIN_PX,
-        NEIGHBOR_MIN_Y_RATIO, YELLOW_NEAR_MAX_GAP_PX,
+        NEIGHBOR_MIN_Y_RATIO,
         MERGE_MAX_STEER_US, MERGE_DONE_PX, MERGE_MAX_SEC,
     )
     if not all(isinstance(v, (float, int)) and math.isfinite(v) for v in numeric):
@@ -80,8 +79,6 @@ def validate_avoid_params():
         raise ValueError('픽셀 값은 양수여야 합니다')
     if not lane.ROI_TOP_RATIO <= NEIGHBOR_MIN_Y_RATIO < 1:
         raise ValueError('NEIGHBOR_MIN_Y_RATIO는 ROI 시작~1 사이여야 합니다')
-    if YELLOW_NEAR_MAX_GAP_PX <= 0:
-        raise ValueError('YELLOW_NEAR_MAX_GAP_PX는 양수여야 합니다')
 # ===== 아래는 주행 코드 =====
 
 
@@ -152,26 +149,24 @@ def visible_neighbour(seeds, current_x, gap):
     return None
 
 
-def nearby_yellow_side(mask, current_x):
-    """Return the side of the nearest close yellow stripe, or ``None``.
+def visible_yellow_side(mask):
+    """Return the screen side of a visible yellow stripe, or ``None``.
 
     The full height of the bird's-eye image is searched without a yellow-line
-    ROI. Pixel x increases to the right.
+    ROI. Direction is based on the image centre, not the followed white stripe.
     """
     width = mask.shape[1]
-    reference_x = width / 2.0 if current_x is None else current_x
-    max_gap = YELLOW_NEAR_MAX_GAP_PX * width / 640
     seeds = stripe_seeds(mask, 0.0, first_band_only=True)
-    candidates = [x for x in seeds if 0 < abs(x - reference_x) <= max_gap]
-    if not candidates:
+    if not seeds:
         return None
-    nearest = min(candidates, key=lambda x: abs(x - reference_x))
-    return 'left' if nearest < reference_x else 'right'
+    centre_x = width / 2.0
+    nearest = min(seeds, key=lambda x: abs(x - centre_x))
+    return 'left' if nearest < centre_x else 'right'
 
 
-def yellow_avoidance_side(mask, current_x):
-    """Return the direction away from a nearby yellow stripe, or ``None``."""
-    yellow_side = nearby_yellow_side(mask, current_x)
+def yellow_avoidance_side(mask):
+    """Return the direction away from a visible yellow stripe, or ``None``."""
+    yellow_side = visible_yellow_side(mask)
     if yellow_side is None:
         return None
     return 'right' if yellow_side == 'left' else 'left'
@@ -528,10 +523,10 @@ def main(argv=None):
             else:
                 yellow_blocked = False
                 if self.state == 'follow' and self.obstacle:
-                    side = yellow_avoidance_side(yellow, self.track_x)
+                    side = yellow_avoidance_side(yellow)
                     if side is None:
                         steering_us, speed_us, moving = self.stop(
-                            'no_yellow', '장애물 감지, 가까운 노란선 없음: 정지')
+                            'no_yellow', '장애물 감지, 화면에 노란선 없음: 정지')
                         yellow_blocked = True
                     else:
                         # Change lanes only after the current stripe is being tracked.

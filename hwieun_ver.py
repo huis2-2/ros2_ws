@@ -104,12 +104,12 @@ def stripe_seeds(mask, min_y_ratio=SEED_MIN_Y_RATIO):
 
 
 def choose_target(white_mask, yellow_mask, current_x, direction=None):
-    """Choose avoidance direction relative to the FOLLOWED WHITE stripe.
+    """Choose avoidance direction from the yellow line's screen side first.
 
-    Right yellow OR another left white -> LEFT.
-    Left yellow OR another right white -> RIGHT.
+    A yellow line on the screen right selects LEFT and one on the screen left
+    selects RIGHT, regardless of the followed white stripe position.
     Yellow supplies direction evidence only, never a white target position.
-    Conflicting evidence is rejected, not arbitrarily prioritized.
+    White-stripe evidence is used only when no yellow line is visible.
     """
     if current_x is None:
         return None, None, 'current stripe unknown'
@@ -121,10 +121,15 @@ def choose_target(white_mask, yellow_mask, current_x, direction=None):
     yellow_seeds = stripe_seeds(yellow_mask, min_y_ratio=0.0)
     left_white = [x for x in white_seeds if x < current_x - gap]
     right_white = [x for x in white_seeds if x > current_x + gap]
-    left_yellow = [x for x in yellow_seeds if x < current_x - gap]
-    right_yellow = [x for x in yellow_seeds if x > current_x + gap]
-    left_evidence = bool(left_white or right_yellow)
-    right_evidence = bool(right_white or left_yellow)
+    screen_center = w / 2.0
+    if yellow_seeds:
+        yellow_x = min(yellow_seeds, key=lambda x: abs(x - screen_center))
+        side = 'right' if yellow_x < screen_center else 'left'
+        candidates = left_white if side == 'left' else right_white
+        target = (max(candidates) if side == 'left' else min(candidates)) if candidates else None
+        return side, target, 'white+yellow' if candidates else 'yellow'
+    left_evidence = bool(left_white)
+    right_evidence = bool(right_white)
     if left_evidence and right_evidence:
         return None, None, 'conflicting left/right boundary evidence'
     if not left_evidence and not right_evidence:
@@ -136,8 +141,7 @@ def choose_target(white_mask, yellow_mask, current_x, direction=None):
     # initial steering direction but is never tracked as the target line.
     candidates = left_white if side == 'left' else right_white
     target = (max(candidates) if side == 'left' else min(candidates)) if candidates else None
-    return side, target, ('white+yellow' if candidates and (right_yellow if side == 'left' else left_yellow)
-                          else 'white' if candidates else 'yellow')
+    return side, target, 'white'
 
 
 def steer_max(side):
