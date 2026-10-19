@@ -25,15 +25,19 @@ import ujin_versin as lane
 # 1. 장애물 감지: LiDAR 중심 기준 거리(m). 앞 범퍼까지의 거리는 포함되지 않음
 SCAN_TOPIC = '/scan'
 FRONT_CENTER_DEG = 180.0      # 차량 정면 방향의 LiDAR 각도(기존 LiDAR 코드와 동일)
-AVOID_TRIGGER_M = 0.40        # 진행 통로 안 장애물이 이 거리 이내면 옆 선으로 회피(정지 없음)
+AVOID_TRIGGER_M = 0.55     # 진행 통로 안 장애물이 이 거리 이내면 옆 선으로 회피(정지 없음)
 CORRIDOR_HALF_WIDTH_M = 0.12  # 진행 통로 반폭. 옆 선 위 물체는 무시되도록 선 간격의 절반 이하
 LIDAR_IGNORE_BELOW_M = 0.03   # 차체 자기 반사 무시
 OBSTACLE_CONFIRM_SCANS = 1    # 연속 감지 스캔 수. 1이면 한 번 감지 즉시 회피
 CLEAR_CONFIRM_SCANS = 3       # 장애물 해제 확인 스캔 수
 SCAN_TIMEOUT_SEC = 0.5        # LiDAR가 이 시간 이상 끊기면 정지(센서 고장 대비)
 
+# 1-1. 흰 선 인식: 밝은 바닥/장애물이 보여 자동 노출로 영상이 어두워져도 선을 유지
+WHITE_V_MIN = 120             # 흰 선 최소 밝기(V). ujin_versin의 172보다 낮춰 어두운 프레임 대응
+WHITE_TOPHAT_MIN = 50         # 주변보다 이만큼 밝아야 선. 낮은 V에서 넓은 밝은 바닥을 걸러냄
+
 # 2. 회피 주행: 옆 선이 보일 때까지 고정 조향
-AVOID_STEER_US = 200          # 중앙 대비 회피 조향량(us). 크면 급하게 꺾음
+AVOID_STEER_US = 260          # 중앙 대비 회피 조향량(us). 크면 급하게 꺾음
 AVOID_SPEED_US = 1590         # 회피/합류 중 속도
 AVOID_MAX_SEC = 2.0           # 이 시간 안에 옆 선을 못 찾으면 보이는 선으로 일반 추종
 LANE_GAP_MIN_PX = 90          # 기존 선과 이만큼 떨어진 흰 선만 옆 선으로 인정(640px 기준)
@@ -41,9 +45,13 @@ NEIGHBOR_MIN_Y_RATIO = 0.70   # 옆 선은 화면 아래쪽(이 비율 아래)�
 
 # 2-1. 노란 경계선: 장애물 감지 순간 화면에 보이는 노란선의 반대편으로 회피
 
-# 3. 새 선 합류: 새 선이 차 중심에 올 때까지 조향 제한
-MERGE_MAX_STEER_US = 220      # 합류 중 중앙 대비 최대 조향량(us). 크면 선을 지나침
-MERGE_DONE_PX = 30            # 새 선 위치 오차가 이 이하면 일반 추종으로 전환
+# 3. 새 선 합류: 선까지 남은 거리에 맞춘 진입 각도로 다가가 선을 지나치지 않게 함
+MERGE_MAX_STEER_US = 240      # 합류 중 중앙 대비 최대 조향량(us). 크면 선을 지나침
+MERGE_APPROACH_DEG_PER_PX = 0.15  # 새 선까지 1px당 허용 진입 각도(도). 크면 늦게 펴서 지나침
+MERGE_APPROACH_MAX_DEG = 15.0  # 새 선에 다가가는 최대 진입 각도(도)
+MERGE_HEADING_KP = 0.08       # 진입 각도 오차(도)당 조향 명령. 크면 좌우로 흔들림
+MERGE_DONE_PX = 30            # 새 선 위치 오차가 이 이하이고
+MERGE_DONE_DEG = 10.0         # 선 각도가 90°에서 이 이내면 일반 추종으로 전환
 MERGE_MAX_SEC = 3.0           # 합류 최대 시간, 넘으면 일반 추종으로 전환
 
 
@@ -51,9 +59,11 @@ def validate_avoid_params():
     numeric = (
         FRONT_CENTER_DEG, AVOID_TRIGGER_M, CORRIDOR_HALF_WIDTH_M,
         LIDAR_IGNORE_BELOW_M, SCAN_TIMEOUT_SEC,
+        WHITE_V_MIN, WHITE_TOPHAT_MIN,
         AVOID_STEER_US, AVOID_SPEED_US, AVOID_MAX_SEC, LANE_GAP_MIN_PX,
         NEIGHBOR_MIN_Y_RATIO,
-        MERGE_MAX_STEER_US, MERGE_DONE_PX, MERGE_MAX_SEC,
+        MERGE_MAX_STEER_US, MERGE_APPROACH_DEG_PER_PX, MERGE_APPROACH_MAX_DEG,
+        MERGE_HEADING_KP, MERGE_DONE_PX, MERGE_DONE_DEG, MERGE_MAX_SEC,
     )
     if not all(isinstance(v, (float, int)) and math.isfinite(v) for v in numeric):
         raise ValueError('회피 파라미터는 유한한 숫자여야 합니다')
@@ -71,6 +81,11 @@ def validate_avoid_params():
         raise ValueError('AVOID_STEER_US가 조향 범위를 벗어납니다')
     if not 0 < MERGE_MAX_STEER_US:
         raise ValueError('MERGE_MAX_STEER_US는 양수여야 합니다')
+    if not 0 <= WHITE_V_MIN <= 255 or not 0 <= WHITE_TOPHAT_MIN <= 255:
+        raise ValueError('흰 선 밝기 값은 0~255여야 합니다')
+    if (MERGE_APPROACH_DEG_PER_PX <= 0 or MERGE_APPROACH_MAX_DEG <= 0
+            or MERGE_HEADING_KP <= 0 or MERGE_DONE_DEG <= 0):
+        raise ValueError('합류 각도 파라미터는 양수여야 합니다')
     if not 1500 <= AVOID_SPEED_US <= lane.MAX_SPEED_US:
         raise ValueError('회피 속도는 1500~속도상한이어야 합니다')
     if AVOID_MAX_SEC <= 0 or MERGE_MAX_SEC <= 0:
@@ -109,11 +124,16 @@ def corridor_distance(points):
 
 
 def lane_masks(image):
-    """Bird's-eye image and white/yellow masks, as in ujin_versin."""
+    """Bird's-eye image and white/yellow masks.
+
+    White uses a lower brightness than ujin_versin plus the top-hat test, so
+    a stripe stays visible when auto exposure darkens the frame.
+    """
     bev = lane.bird_eye_view(image)
     tophat = lane.bird_eye_view(lane.brightness_tophat(image))
-    white = lane.lane_color_mask(bev, lane.WHITE_LOWER_HSV, lane.WHITE_UPPER_HSV,
-                                 tophat, lane.WHITE_TOPHAT_MIN)
+    white_lower = (lane.WHITE_LOWER_HSV[0], lane.WHITE_LOWER_HSV[1], WHITE_V_MIN)
+    white = lane.lane_color_mask(bev, white_lower, lane.WHITE_UPPER_HSV,
+                                 tophat, WHITE_TOPHAT_MIN)
     yellow = lane.lane_color_mask(
         bev, lane.YELLOW_LOWER_HSV, lane.YELLOW_UPPER_HSV, apply_roi=False)
     return bev, white, yellow
@@ -468,20 +488,31 @@ def main(argv=None):
                 speed_us = min(AVOID_SPEED_US, options.speed_us)
                 self.apply(self.last_tracking_steering, True, speed_us)
                 return None, self.last_tracking_steering, speed_us, True
-            center_x, angle_deg, _, _, _, bottom_x, partial = fit
+            _, angle_deg, _, _, _, bottom_x, _ = fit
             self.track_x = bottom_x
-            steering_us = self.controller.steering_pulse(
-                bottom_x if partial else center_x, 90.0 if partial else angle_deg, width)
-            steering_us = int(np.clip(steering_us,
-                                      lane.STEERING_CENTER_US - MERGE_MAX_STEER_US,
-                                      lane.STEERING_CENTER_US + MERGE_MAX_STEER_US))
+            # Approach the stripe at an angle that shrinks with the remaining
+            # distance, so the car is already straightening when it reaches it.
+            offset_px = (lane.LINE_CENTER_X_PX * width / 640 - bottom_x) * 640 / width
+            heading_deg = angle_deg - 90.0  # > 0: car points left of the stripe
+            wanted_deg = float(np.clip(offset_px * MERGE_APPROACH_DEG_PER_PX,
+                                       -MERGE_APPROACH_MAX_DEG, MERGE_APPROACH_MAX_DEG))
+            command = MERGE_HEADING_KP * (wanted_deg - heading_deg)  # > 0 turns left
+            endpoint = lane.STEERING_LEFT_US if command >= 0 else lane.STEERING_RIGHT_US
+            steering_us = lane.STEERING_CENTER_US + (
+                min(abs(command), lane.MAX_ANGULAR) / lane.MAX_ANGULAR
+                * (endpoint - lane.STEERING_CENTER_US))
+            steering_us = int(round(np.clip(steering_us,
+                                            lane.STEERING_CENTER_US - MERGE_MAX_STEER_US,
+                                            lane.STEERING_CENTER_US + MERGE_MAX_STEER_US)))
             speed_us = min(AVOID_SPEED_US, options.speed_us)
             self.tracking(steering_us, bottom_x, width)
             self.apply(steering_us, True, speed_us)
-            error = abs(bottom_x - lane.LINE_CENTER_X_PX * width / 640)
+            error = abs(offset_px)
             self.report('merge', f'합류 중: near_x={bottom_x:.1f}, 오차={error:.0f}px, '
+                        f'각도={heading_deg:+.1f}°(목표 {wanted_deg:+.1f}°), '
                         f'조향={steering_us} us')
-            if error <= MERGE_DONE_PX * width / 640 or now - self.state_since > MERGE_MAX_SEC:
+            aligned = error <= MERGE_DONE_PX and abs(heading_deg) <= MERGE_DONE_DEG
+            if aligned or now - self.state_since > MERGE_MAX_SEC:
                 self.lane_frames = lane.LANE_CONFIRM_FRAMES
                 self.full_frames = lane.LANE_CONFIRM_FRAMES
                 self.last_full_at = now
