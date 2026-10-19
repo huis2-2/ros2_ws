@@ -42,6 +42,10 @@ AVOID_MAX_SEC = 2.0           # 이 시간 안에 옆 선을 못 찾으면 보�
 LANE_GAP_MIN_PX = 90          # 기존 선과 이만큼 떨어진 흰 선만 옆 선으로 인정(640px 기준)
 NEIGHBOR_MIN_Y_RATIO = 0.70   # 옆 선은 화면 아래쪽(이 비율 아래)에서만 찾음
 
+# 2-1. 노란 경계선: 장애물 감지 순간 가까운 노란선의 반대편으로 회피
+YELLOW_NEAR_MIN_Y_RATIO = 0.70  # 화면 아래쪽의 노란선만 가까운 경계로 판단
+YELLOW_NEAR_MAX_GAP_PX = 220    # 현재 주행선과의 최대 가로 거리(640px 기준)
+
 # 3. 새 선 합류: 새 선이 차 중심에 올 때까지 조향 제한
 MERGE_MAX_STEER_US = 220      # 합류 중 중앙 대비 최대 조향량(us). 크면 선을 지나침
 MERGE_DONE_PX = 30            # 새 선 위치 오차가 이 이하면 일반 추종으로 전환
@@ -53,7 +57,8 @@ def validate_avoid_params():
         FRONT_CENTER_DEG, AVOID_TRIGGER_M, CORRIDOR_HALF_WIDTH_M,
         LIDAR_IGNORE_BELOW_M, SCAN_TIMEOUT_SEC, SIDE_CHECK_M, SIDE_CHECK_WIDTH_M,
         AVOID_STEER_US, AVOID_SPEED_US, AVOID_MAX_SEC, LANE_GAP_MIN_PX,
-        NEIGHBOR_MIN_Y_RATIO, MERGE_MAX_STEER_US, MERGE_DONE_PX, MERGE_MAX_SEC,
+        NEIGHBOR_MIN_Y_RATIO, YELLOW_NEAR_MIN_Y_RATIO, YELLOW_NEAR_MAX_GAP_PX,
+        MERGE_MAX_STEER_US, MERGE_DONE_PX, MERGE_MAX_SEC,
     )
     if not all(isinstance(v, (float, int)) and math.isfinite(v) for v in numeric):
         raise ValueError('회피 파라미터는 유한한 숫자여야 합니다')
@@ -83,6 +88,10 @@ def validate_avoid_params():
         raise ValueError('픽셀 값은 양수여야 합니다')
     if not lane.ROI_TOP_RATIO <= NEIGHBOR_MIN_Y_RATIO < 1:
         raise ValueError('NEIGHBOR_MIN_Y_RATIO는 ROI 시작~1 사이여야 합니다')
+    if not lane.ROI_TOP_RATIO <= YELLOW_NEAR_MIN_Y_RATIO < 1:
+        raise ValueError('YELLOW_NEAR_MIN_Y_RATIO는 ROI 시작~1 사이여야 합니다')
+    if YELLOW_NEAR_MAX_GAP_PX <= 0:
+        raise ValueError('YELLOW_NEAR_MAX_GAP_PX는 양수여야 합니다')
 # ===== 아래는 주행 코드 =====
 
 
@@ -156,6 +165,32 @@ def visible_neighbour(seeds, current_x, gap):
     if left != right:
         return 'left' if left else 'right'
     return None
+
+
+def nearby_yellow_side(mask, current_x):
+    """Return the side of the nearest close yellow stripe, or ``None``.
+
+    Only the lower part of the bird's-eye image is considered so a distant
+    yellow marking does not unnecessarily override the normal avoidance
+    direction. Pixel x increases to the right.
+    """
+    width = mask.shape[1]
+    reference_x = width / 2.0 if current_x is None else current_x
+    max_gap = YELLOW_NEAR_MAX_GAP_PX * width / 640
+    seeds = stripe_seeds(mask, YELLOW_NEAR_MIN_Y_RATIO, first_band_only=True)
+    candidates = [x for x in seeds if 0 < abs(x - reference_x) <= max_gap]
+    if not candidates:
+        return None
+    nearest = min(candidates, key=lambda x: abs(x - reference_x))
+    return 'left' if nearest < reference_x else 'right'
+
+
+def yellow_avoidance_side(mask, current_x):
+    """Return the direction away from a nearby yellow stripe, or ``None``."""
+    yellow_side = nearby_yellow_side(mask, current_x)
+    if yellow_side is None:
+        return None
+    return 'right' if yellow_side == 'left' else 'left'
 
 
 def neighbour_stripe(seeds, old_x, gap, side):
@@ -400,12 +435,17 @@ def main(argv=None):
                         f'속도={speed_us} us 장애물={format_m(self.obstacle_m)}')
             return fit, steering_us, speed_us, True
 
-        def start_avoid(self, white):
+        def start_avoid(self, white, yellow):
             width = white.shape[1]
             gap = LANE_GAP_MIN_PX * width / 640
             seeds = stripe_seeds(white, NEIGHBOR_MIN_Y_RATIO)
-            side = visible_neighbour(seeds, self.track_x, gap)
-            reason = '옆 선 보임'
+            side = yellow_avoidance_side(yellow, self.track_x)
+            if side is not None:
+                yellow_side = 'left' if side == 'right' else 'right'
+                reason = f'가까운 노란선이 {yellow_side}쪽'
+            else:
+                side = visible_neighbour(seeds, self.track_x, gap)
+                reason = '옆 선 보임'
             if side is None and self.current_side is not None:
                 side = 'left' if self.current_side == 'right' else 'right'
                 reason = f'{self.current_side} 선 주행 중'
@@ -532,7 +572,7 @@ def main(argv=None):
                     driving = (self.last_tracking_at is not None and self.track_x is not None
                                and now - self.last_tracking_at < 0.3)
                     if driving:
-                        self.start_avoid(white)
+                        self.start_avoid(white, yellow)
                 result = self.avoid_step(white, now) if self.state == 'avoid' else None
                 if result is not None:
                     steering_us, speed_us, moving = result
