@@ -127,8 +127,8 @@ WHITE_UPPER_HSV = (111, 27, 255)
 # rejects the wide bright floor beside the track but keeps dim, blurred stripes.
 WHITE_TOPHAT_MIN = 0
 WHITE_TOPHAT_KERNEL_PX = 41
-YELLOW_LOWER_HSV = (0, 59, 220)
-YELLOW_UPPER_HSV = (179, 255, 255)
+YELLOW_LOWER_HSV = (0, 55,145)
+YELLOW_UPPER_HSV = (147, 160, 205)
 
 
 @dataclass
