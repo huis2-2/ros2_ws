@@ -40,7 +40,6 @@ LANE_GAP_MIN_PX = 90          # 기존 선과 이만큼 떨어진 흰 선만 옆
 NEIGHBOR_MIN_Y_RATIO = 0.70   # 옆 선은 화면 아래쪽(이 비율 아래)에서만 찾음
 
 # 2-1. 노란 경계선: 장애물 감지 순간 가까운 노란선의 반대편으로 회피
-YELLOW_NEAR_MIN_Y_RATIO = 0.70  # 화면 아래쪽의 노란선만 가까운 경계로 판단
 YELLOW_NEAR_MAX_GAP_PX = 220    # 현재 주행선과의 최대 가로 거리(640px 기준)
 
 # 3. 새 선 합류: 새 선이 차 중심에 올 때까지 조향 제한
@@ -54,7 +53,7 @@ def validate_avoid_params():
         FRONT_CENTER_DEG, AVOID_TRIGGER_M, CORRIDOR_HALF_WIDTH_M,
         LIDAR_IGNORE_BELOW_M, SCAN_TIMEOUT_SEC,
         AVOID_STEER_US, AVOID_SPEED_US, AVOID_MAX_SEC, LANE_GAP_MIN_PX,
-        NEIGHBOR_MIN_Y_RATIO, YELLOW_NEAR_MIN_Y_RATIO, YELLOW_NEAR_MAX_GAP_PX,
+        NEIGHBOR_MIN_Y_RATIO, YELLOW_NEAR_MAX_GAP_PX,
         MERGE_MAX_STEER_US, MERGE_DONE_PX, MERGE_MAX_SEC,
     )
     if not all(isinstance(v, (float, int)) and math.isfinite(v) for v in numeric):
@@ -81,8 +80,6 @@ def validate_avoid_params():
         raise ValueError('픽셀 값은 양수여야 합니다')
     if not lane.ROI_TOP_RATIO <= NEIGHBOR_MIN_Y_RATIO < 1:
         raise ValueError('NEIGHBOR_MIN_Y_RATIO는 ROI 시작~1 사이여야 합니다')
-    if not lane.ROI_TOP_RATIO <= YELLOW_NEAR_MIN_Y_RATIO < 1:
-        raise ValueError('YELLOW_NEAR_MIN_Y_RATIO는 ROI 시작~1 사이여야 합니다')
     if YELLOW_NEAR_MAX_GAP_PX <= 0:
         raise ValueError('YELLOW_NEAR_MAX_GAP_PX는 양수여야 합니다')
 # ===== 아래는 주행 코드 =====
@@ -120,7 +117,8 @@ def lane_masks(image):
     tophat = lane.bird_eye_view(lane.brightness_tophat(image))
     white = lane.lane_color_mask(bev, lane.WHITE_LOWER_HSV, lane.WHITE_UPPER_HSV,
                                  tophat, lane.WHITE_TOPHAT_MIN)
-    yellow = lane.lane_color_mask(bev, lane.YELLOW_LOWER_HSV, lane.YELLOW_UPPER_HSV)
+    yellow = lane.lane_color_mask(
+        bev, lane.YELLOW_LOWER_HSV, lane.YELLOW_UPPER_HSV, apply_roi=False)
     return bev, white, yellow
 
 
@@ -129,7 +127,12 @@ def stripe_seeds(mask, min_y_ratio, first_band_only=False):
     height, width = mask.shape
     seeds = []
     band_top = int(height * 0.85)
-    while band_top >= int(height * min_y_ratio):
+    min_y = int(height * min_y_ratio)
+    step = max(1, int(height * 0.075))
+    band_tops = list(range(band_top, min_y - 1, -step))
+    if not band_tops or band_tops[-1] != min_y:
+        band_tops.append(min_y)
+    for band_top in band_tops:
         histogram = np.count_nonzero(mask[band_top:band_top + int(height * 0.15)], axis=0)
         candidates = np.flatnonzero(histogram >= max(3, int(height * 0.015)))
         if candidates.size:
@@ -137,7 +140,6 @@ def stripe_seeds(mask, min_y_ratio, first_band_only=False):
             seeds += [float(np.mean(g)) for g in groups if g[-1]-g[0] < width*0.18]
             if seeds and first_band_only:
                 break
-        band_top -= int(height * 0.075)
     return seeds
 
 
@@ -153,14 +155,13 @@ def visible_neighbour(seeds, current_x, gap):
 def nearby_yellow_side(mask, current_x):
     """Return the side of the nearest close yellow stripe, or ``None``.
 
-    Only the lower part of the bird's-eye image is considered so a distant
-    yellow marking does not unnecessarily override the normal avoidance
-    direction. Pixel x increases to the right.
+    The full height of the bird's-eye image is searched without a yellow-line
+    ROI. Pixel x increases to the right.
     """
     width = mask.shape[1]
     reference_x = width / 2.0 if current_x is None else current_x
     max_gap = YELLOW_NEAR_MAX_GAP_PX * width / 640
-    seeds = stripe_seeds(mask, YELLOW_NEAR_MIN_Y_RATIO, first_band_only=True)
+    seeds = stripe_seeds(mask, 0.0, first_band_only=True)
     candidates = [x for x in seeds if 0 < abs(x - reference_x) <= max_gap]
     if not candidates:
         return None

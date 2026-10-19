@@ -23,10 +23,11 @@ class NearbyYellowSideTests(unittest.TestCase):
         self.assertIsNone(avoid.nearby_yellow_side(self.yellow_mask(20), 320))
         self.assertIsNone(avoid.yellow_avoidance_side(self.yellow_mask(20), 320))
 
-    def test_yellow_high_in_image_is_not_nearby(self):
+    def test_yellow_high_in_image_is_detected_without_roi(self):
         mask = np.zeros((480, 640), dtype=np.uint8)
-        mask[40:100, 180:188] = 255
-        self.assertIsNone(avoid.nearby_yellow_side(mask, 320))
+        mask[0:20, 180:188] = 255
+        self.assertEqual(avoid.nearby_yellow_side(mask, 320), 'left')
+        self.assertEqual(avoid.yellow_avoidance_side(mask, 320), 'right')
 
 
 if __name__ == '__main__':

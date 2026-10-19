@@ -76,6 +76,15 @@ class LaneDetectionTests(unittest.TestCase):
 
         self.assertGreater(int(np.count_nonzero(mask)), 0)
 
+    def test_mask_can_keep_pixels_above_lane_roi(self):
+        image = np.zeros((100, 100, 3), dtype=np.uint8)
+        image[10:30, 40:60] = (0, 255, 255)
+        full_mask = lane_color_mask(
+            image, YELLOW_LOWER_HSV, YELLOW_UPPER_HSV, apply_roi=False)
+        roi_mask = lane_color_mask(image, YELLOW_LOWER_HSV, YELLOW_UPPER_HSV)
+        self.assertGreater(int(np.count_nonzero(full_mask[10:30, 40:60])), 0)
+        self.assertEqual(int(np.count_nonzero(roi_mask[10:30, 40:60])), 0)
+
     def test_white_detector_does_not_follow_yellow_only_image(self):
         """A yellow-only road image must not produce a steering lane."""
         image = np.zeros((480, 640, 3), dtype=np.uint8)

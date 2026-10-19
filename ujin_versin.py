@@ -176,8 +176,9 @@ def brightness_tophat(image):
     return cv2.morphologyEx(value, cv2.MORPH_TOPHAT, kernel)
 
 
-def lane_color_mask(image, lower_hsv, upper_hsv, tophat=None, tophat_min=0):
-    """Return a cleaned rectangular lower-road mask for one HSV range."""
+def lane_color_mask(image, lower_hsv, upper_hsv, tophat=None, tophat_min=0,
+                    apply_roi=True):
+    """Return a cleaned HSV mask, optionally limited to the lower road ROI."""
     hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
     mask = cv2.inRange(
         hsv,
@@ -186,12 +187,13 @@ def lane_color_mask(image, lower_hsv, upper_hsv, tophat=None, tophat_min=0):
     )
     if tophat is not None:
         mask[tophat < tophat_min] = 0
-    height, width = mask.shape
-    roi = np.zeros_like(mask)
-    top_left = (0, int(height * ROI_TOP_RATIO))
-    bottom_right = (width - 1, height - 1)
-    cv2.rectangle(roi, top_left, bottom_right, 255, thickness=-1)
-    mask = cv2.bitwise_and(mask, roi)
+    if apply_roi:
+        height, width = mask.shape
+        roi = np.zeros_like(mask)
+        top_left = (0, int(height * ROI_TOP_RATIO))
+        bottom_right = (width - 1, height - 1)
+        cv2.rectangle(roi, top_left, bottom_right, 255, thickness=-1)
+        mask = cv2.bitwise_and(mask, roi)
     kernel = np.ones((5, 5), dtype=np.uint8)
     mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
     return cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
@@ -418,7 +420,8 @@ def detect_white_lane(image, previous_x=None):
     tophat = bird_eye_view(brightness_tophat(image))
     white_mask = lane_color_mask(bev, WHITE_LOWER_HSV, WHITE_UPPER_HSV)
                                  
-    yellow_mask = lane_color_mask(bev, YELLOW_LOWER_HSV, YELLOW_UPPER_HSV)
+    yellow_mask = lane_color_mask(
+        bev, YELLOW_LOWER_HSV, YELLOW_UPPER_HSV, apply_roi=False)
     fit = fit_lane_track(white_mask, previous_x)
     if fit is None:
         return None, bev, white_mask, yellow_mask

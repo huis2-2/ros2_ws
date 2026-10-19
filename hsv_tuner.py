@@ -189,7 +189,12 @@ class HsvTuner:
                     np.array(lower_hsv, dtype=np.uint8),
                     np.array(upper_hsv, dtype=np.uint8),
                 )
-                lane_mask = lane_color_mask(bev, lower_hsv, upper_hsv)
+                lane_mask = lane_color_mask(
+                    bev,
+                    lower_hsv,
+                    upper_hsv,
+                    apply_roi=self.color != 'yellow',
+                )
                 selected = cv2.bitwise_and(bev, bev, mask=lane_mask)
 
                 cv2.imshow(SOURCE_WINDOW, bev)
