@@ -44,6 +44,7 @@ LANE_GAP_MIN_PX = 90          # 기존 선과 이만큼 떨어진 흰 선만 옆
 NEIGHBOR_MIN_Y_RATIO = 0.70   # 옆 선은 화면 아래쪽(이 비율 아래)에서만 찾음
 
 # 2-1. 노란 경계선: 장애물 감지 순간 화면에 보이는 노란선의 반대편으로 회피
+#      노란선이 안 보이면 멈추지 않고 현재 선 추종을 계속하며, 보이는 순간 회피 시작
 
 # 3. 새 선 합류: 선까지 남은 거리에 맞춘 진입 각도로 다가가 선을 지나치지 않게 함
 MERGE_MAX_STEER_RATIO = 0.92  # 합류 중 각 방향 최대 조향 대비 상한 비율(0~1)
@@ -553,24 +554,22 @@ def main(argv=None):
             if not lidar_ok:
                 steering_us, speed_us, moving = self.stop('no_lidar', 'LiDAR 스캔 없음: 정지')
             else:
-                yellow_blocked = False
                 if self.state == 'follow' and self.obstacle:
                     side = yellow_avoidance_side(yellow)
                     if side is None:
-                        steering_us, speed_us, moving = self.stop(
-                            'no_yellow', '장애물 감지, 화면에 노란선 없음: 정지')
-                        yellow_blocked = True
+                        # Yellow only decides the direction: without it, keep
+                        # following the current stripe and re-check next frame.
+                        self.get_logger().warning(
+                            '장애물 감지, 화면에 노란선 없음: 회피 보류, 차선 추종 유지',
+                            throttle_duration_sec=1.0)
                     else:
                         # Change lanes only after the current stripe is being tracked.
                         driving = (self.last_tracking_at is not None and self.track_x is not None
                                    and now - self.last_tracking_at < 0.3)
                         if driving:
                             self.start_avoid(side)
-                result = (self.avoid_step(white, now)
-                          if not yellow_blocked and self.state == 'avoid' else None)
-                if yellow_blocked:
-                    pass
-                elif result is not None:
+                result = self.avoid_step(white, now) if self.state == 'avoid' else None
+                if result is not None:
                     steering_us, speed_us, moving = result
                 elif self.state == 'merge':
                     fit, steering_us, speed_us, moving = self.merge_step(white, now)
