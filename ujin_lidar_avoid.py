@@ -40,6 +40,8 @@ WHITE_TOPHAT_MIN = 50         # 주변보다 이만큼 밝아야 선. 낮은 V�
 AVOID_STEER_RATIO = 1.0       # 회피 조향: 각 방향 최대 조향 대비 비율(0~1). 크면 급하게 꺾음
 AVOID_SPEED_US = 1590         # 회피/합류 중 속도
 AVOID_MAX_SEC = 2.0           # 이 시간 안에 옆 선을 못 찾으면 보이는 선으로 일반 추종
+AVOID_PASS_MARGIN_M = 0.20    # 장애물이 회피 반대쪽으로 이 거리보다 가까우면 지나칠 때까지
+                              # 옆 선이 보여도 최대 조향 유지. 차 반폭 + 여유
 LANE_GAP_MIN_PX = 90          # 기존 선과 이만큼 떨어진 흰 선만 옆 선으로 인정(640px 기준)
 NEIGHBOR_MIN_Y_RATIO = 0.70   # 옆 선은 화면 아래쪽(이 비율 아래)에서만 찾음
 
@@ -61,7 +63,8 @@ def validate_avoid_params():
         FRONT_CENTER_DEG, AVOID_TRIGGER_M, CORRIDOR_HALF_WIDTH_M,
         LIDAR_IGNORE_BELOW_M, SCAN_TIMEOUT_SEC,
         WHITE_V_MIN, WHITE_TOPHAT_MIN,
-        AVOID_STEER_RATIO, AVOID_SPEED_US, AVOID_MAX_SEC, LANE_GAP_MIN_PX,
+        AVOID_STEER_RATIO, AVOID_SPEED_US, AVOID_MAX_SEC, AVOID_PASS_MARGIN_M,
+        LANE_GAP_MIN_PX,
         NEIGHBOR_MIN_Y_RATIO,
         MERGE_MAX_STEER_RATIO, MERGE_APPROACH_DEG_PER_PX, MERGE_APPROACH_MAX_DEG,
         MERGE_HEADING_KP, MERGE_DONE_PX, MERGE_DONE_DEG, MERGE_MAX_SEC,
@@ -70,6 +73,8 @@ def validate_avoid_params():
         raise ValueError('회피 파라미터는 유한한 숫자여야 합니다')
     if not 0 <= LIDAR_IGNORE_BELOW_M < AVOID_TRIGGER_M:
         raise ValueError('0 <= 자기반사 무시 거리 < 회피 거리여야 합니다')
+    if AVOID_PASS_MARGIN_M < 0:
+        raise ValueError('AVOID_PASS_MARGIN_M은 0 이상이어야 합니다')
     if CORRIDOR_HALF_WIDTH_M <= 0 or SCAN_TIMEOUT_SEC <= 0:
         raise ValueError('통로 반폭과 LiDAR 타임아웃은 양수여야 합니다')
     for name in ('OBSTACLE_CONFIRM_SCANS', 'CLEAR_CONFIRM_SCANS'):
@@ -118,6 +123,20 @@ def corridor_distance(points):
     forward, lateral = points
     hit = (forward > 0.0) & (np.abs(lateral) <= CORRIDOR_HALF_WIDTH_M)
     return float(forward[hit].min()) if hit.any() else math.inf
+
+
+def obstacle_not_passed(points, side):
+    """True while the avoided obstacle is still ahead of the LiDAR.
+
+    Only points from the far side of the lane change up to the corridor edge
+    on the target side count, so an obstacle in the target lane further ahead
+    does not hold the turn.
+    """
+    forward, lateral = points
+    toward = lateral if side == 'left' else -lateral
+    hit = ((forward > 0.0) & (forward <= AVOID_TRIGGER_M)
+           & (toward >= -AVOID_PASS_MARGIN_M) & (toward <= CORRIDOR_HALF_WIDTH_M))
+    return bool(hit.any())
 
 
 def lane_masks(image):
@@ -278,6 +297,7 @@ def main(argv=None):
             self.old_x = None
             # LiDAR.
             self.last_scan_at = None
+            self.points = None
             self.obstacle_m = None
             self.near_scans = 0
             self.clear_scans = 0
@@ -344,6 +364,7 @@ def main(argv=None):
             if points is None:
                 return  # unusable scan: the timeout stops the car if this persists
             distance = corridor_distance(points)
+            self.points = points
             self.last_scan_at = time.monotonic()
             self.obstacle_m = distance
             if distance <= AVOID_TRIGGER_M:
@@ -454,7 +475,10 @@ def main(argv=None):
             if near:
                 self.old_x = min(near, key=lambda x: abs(x - self.old_x))
             new_x = neighbour_stripe(seeds, self.old_x, gap, self.target_side)
-            if new_x is not None:
+            # Merging limits the approach angle, so keep full lock until the
+            # obstacle has passed the LiDAR even if the new stripe is visible.
+            passing = obstacle_not_passed(self.points, self.target_side)
+            if new_x is not None and not passing:
                 self.reset_tracking()
                 self.track_x = new_x
                 self.current_side = self.target_side
@@ -474,7 +498,8 @@ def main(argv=None):
             self.tracking(steering_us, None, width)
             self.apply(steering_us, True, speed_us)
             self.report('avoid', f'회피 중: {self.target_side} 조향={steering_us} us, '
-                        f'장애물={format_m(self.obstacle_m)}', warning=True)
+                        f'장애물={format_m(self.obstacle_m)}'
+                        f'{", 통과 대기" if passing else ""}', warning=True)
             return steering_us, speed_us, True
 
         def merge_step(self, white, now):
@@ -554,7 +579,12 @@ def main(argv=None):
             if not lidar_ok:
                 steering_us, speed_us, moving = self.stop('no_lidar', 'LiDAR 스캔 없음: 정지')
             else:
-                if self.state == 'follow' and self.obstacle:
+                # A merge can run into the next obstacle in the new lane, so it
+                # may be interrupted by a fresh lane change as well.
+                approaching = (self.obstacle if self.state == 'follow' else
+                               self.state == 'merge' and self.obstacle_m is not None
+                               and self.obstacle_m <= AVOID_TRIGGER_M)
+                if approaching:
                     side = yellow_avoidance_side(yellow)
                     if side is None:
                         # Yellow only decides the direction: without it, keep

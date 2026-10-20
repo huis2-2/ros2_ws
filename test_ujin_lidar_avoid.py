@@ -35,5 +35,29 @@ class NearbyYellowSideTests(unittest.TestCase):
         self.assertIsNone(avoid.yellow_avoidance_side(mask))
 
 
+class ObstaclePassTests(unittest.TestCase):
+    def points(self, forward, lateral):
+        return np.array([forward]), np.array([lateral])
+
+    def test_obstacle_ahead_holds_turn(self):
+        self.assertTrue(avoid.obstacle_not_passed(self.points(0.4, 0.03), 'left'))
+        self.assertTrue(avoid.obstacle_not_passed(self.points(0.4, -0.03), 'right'))
+
+    def test_obstacle_beside_far_side_still_holds_until_behind(self):
+        self.assertTrue(avoid.obstacle_not_passed(self.points(0.05, -0.13), 'left'))
+        self.assertFalse(avoid.obstacle_not_passed(self.points(-0.05, -0.13), 'left'))
+
+    def test_obstacle_cleared_sideways_releases_turn(self):
+        self.assertFalse(avoid.obstacle_not_passed(self.points(0.1, -0.25), 'left'))
+        self.assertFalse(avoid.obstacle_not_passed(self.points(0.1, 0.25), 'right'))
+
+    def test_obstacle_in_target_lane_does_not_hold_turn(self):
+        self.assertFalse(avoid.obstacle_not_passed(self.points(0.4, 0.3), 'left'))
+        self.assertFalse(avoid.obstacle_not_passed(self.points(0.4, -0.3), 'right'))
+
+    def test_far_obstacle_does_not_hold_turn(self):
+        self.assertFalse(avoid.obstacle_not_passed(self.points(0.9, 0.0), 'left'))
+
+
 if __name__ == '__main__':
     unittest.main()
