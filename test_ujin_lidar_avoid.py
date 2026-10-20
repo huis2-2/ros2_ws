@@ -60,13 +60,17 @@ class ObstaclePassTests(unittest.TestCase):
 
 
 class StripeReachedTests(unittest.TestCase):
+    # Relative to the tuned car centre so retuning LINE_CENTER_X_PX keeps passing.
+    centre = avoid.lane.LINE_CENTER_X_PX
+    reach = avoid.AVOID_REACH_PX
+
     def test_left_turn_reaches_stripe_near_centre(self):
-        self.assertFalse(avoid.stripe_reached(150, 'left', 640))
-        self.assertTrue(avoid.stripe_reached(243, 'left', 640))
+        self.assertFalse(avoid.stripe_reached(self.centre - (self.reach + 100), 'left', 640))
+        self.assertTrue(avoid.stripe_reached(self.centre - self.reach + 3, 'left', 640))
 
     def test_right_turn_reaches_stripe_near_centre(self):
-        self.assertFalse(avoid.stripe_reached(450, 'right', 640))
-        self.assertTrue(avoid.stripe_reached(305, 'right', 640))
+        self.assertFalse(avoid.stripe_reached(self.centre + (self.reach + 100), 'right', 640))
+        self.assertTrue(avoid.stripe_reached(self.centre + self.reach - 3, 'right', 640))
 
 
 if __name__ == '__main__':
