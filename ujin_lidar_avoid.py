@@ -42,6 +42,8 @@ AVOID_SPEED_US = 1590         # 회피/합류 중 속도
 AVOID_MAX_SEC = 2.0           # 이 시간 안에 옆 선을 못 찾으면 보이는 선으로 일반 추종
 AVOID_PASS_MARGIN_M = 0.20    # 장애물이 회피 반대쪽으로 이 거리보다 가까우면 지나칠 때까지
                               # 옆 선이 보여도 최대 조향 유지. 차 반폭 + 여유
+AVOID_REACH_PX = 40           # 단, 새 선이 차 중심(LINE_CENTER_X_PX)에서 이만큼 안으로 오면
+                              # 이미 새 차선이므로 바로 합류. 크면 일찍 풀려 장애물에 가까워짐
 LANE_GAP_MIN_PX = 90          # 기존 선과 이만큼 떨어진 흰 선만 옆 선으로 인정(640px 기준)
 NEIGHBOR_MIN_Y_RATIO = 0.70   # 옆 선은 화면 아래쪽(이 비율 아래)에서만 찾음
 
@@ -64,6 +66,7 @@ def validate_avoid_params():
         LIDAR_IGNORE_BELOW_M, SCAN_TIMEOUT_SEC,
         WHITE_V_MIN, WHITE_TOPHAT_MIN,
         AVOID_STEER_RATIO, AVOID_SPEED_US, AVOID_MAX_SEC, AVOID_PASS_MARGIN_M,
+        AVOID_REACH_PX,
         LANE_GAP_MIN_PX,
         NEIGHBOR_MIN_Y_RATIO,
         MERGE_MAX_STEER_RATIO, MERGE_APPROACH_DEG_PER_PX, MERGE_APPROACH_MAX_DEG,
@@ -92,7 +95,7 @@ def validate_avoid_params():
         raise ValueError('회피 속도는 1500~속도상한이어야 합니다')
     if AVOID_MAX_SEC <= 0 or MERGE_MAX_SEC <= 0:
         raise ValueError('회피/합류 시간 값을 확인하세요')
-    if LANE_GAP_MIN_PX <= 0 or MERGE_DONE_PX <= 0:
+    if LANE_GAP_MIN_PX <= 0 or MERGE_DONE_PX <= 0 or AVOID_REACH_PX < 0:
         raise ValueError('픽셀 값은 양수여야 합니다')
     if not lane.ROI_TOP_RATIO <= NEIGHBOR_MIN_Y_RATIO < 1:
         raise ValueError('NEIGHBOR_MIN_Y_RATIO는 ROI 시작~1 사이여야 합니다')
@@ -137,6 +140,17 @@ def obstacle_not_passed(points, side):
     hit = ((forward > 0.0) & (forward <= AVOID_TRIGGER_M)
            & (toward >= -AVOID_PASS_MARGIN_M) & (toward <= CORRIDOR_HALF_WIDTH_M))
     return bool(hit.any())
+
+
+def stripe_reached(new_x, side, width):
+    """True once the new stripe has come under the car centre.
+
+    While turning left the new stripe slides right across the image (and the
+    reverse for a right turn); holding full lock past it leaves the track.
+    """
+    centre = lane.LINE_CENTER_X_PX * width / 640
+    reach = AVOID_REACH_PX * width / 640
+    return new_x >= centre - reach if side == 'left' else new_x <= centre + reach
 
 
 def lane_masks(image):
@@ -476,9 +490,11 @@ def main(argv=None):
                 self.old_x = min(near, key=lambda x: abs(x - self.old_x))
             new_x = neighbour_stripe(seeds, self.old_x, gap, self.target_side)
             # Merging limits the approach angle, so keep full lock until the
-            # obstacle has passed the LiDAR even if the new stripe is visible.
+            # obstacle has passed the LiDAR even if the new stripe is visible,
+            # but no further than onto the new stripe.
             passing = obstacle_not_passed(self.points, self.target_side)
-            if new_x is not None and not passing:
+            if new_x is not None and (
+                    not passing or stripe_reached(new_x, self.target_side, width)):
                 self.reset_tracking()
                 self.track_x = new_x
                 self.current_side = self.target_side

@@ -59,5 +59,15 @@ class ObstaclePassTests(unittest.TestCase):
         self.assertFalse(avoid.obstacle_not_passed(self.points(0.9, 0.0), 'left'))
 
 
+class StripeReachedTests(unittest.TestCase):
+    def test_left_turn_reaches_stripe_near_centre(self):
+        self.assertFalse(avoid.stripe_reached(150, 'left', 640))
+        self.assertTrue(avoid.stripe_reached(243, 'left', 640))
+
+    def test_right_turn_reaches_stripe_near_centre(self):
+        self.assertFalse(avoid.stripe_reached(450, 'right', 640))
+        self.assertTrue(avoid.stripe_reached(305, 'right', 640))
+
+
 if __name__ == '__main__':
     unittest.main()
