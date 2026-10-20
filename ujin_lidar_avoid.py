@@ -26,7 +26,7 @@ import ujin_versin as lane
 SCAN_TOPIC = '/scan'
 FRONT_CENTER_DEG = 180.0      # 차량 정면 방향의 LiDAR 각도(기존 LiDAR 코드와 동일)
 AVOID_TRIGGER_M = 0.55     # 진행 통로 안 장애물이 이 거리 이내면 옆 선으로 회피(정지 없음)
-CORRIDOR_HALF_WIDTH_M = 0.12  # 진행 통로 반폭. 옆 선 위 물체는 무시되도록 선 간격의 절반 이하
+CORRIDOR_HALF_WIDTH_M = 0.1  # 진행 통로 반폭. 옆 선 위 물체는 무시되도록 선 간격의 절반 이하
 LIDAR_IGNORE_BELOW_M = 0.03   # 차체 자기 반사 무시
 OBSTACLE_CONFIRM_SCANS = 1    # 연속 감지 스캔 수. 1이면 한 번 감지 즉시 회피
 CLEAR_CONFIRM_SCANS = 3       # 장애물 해제 확인 스캔 수
@@ -44,6 +44,8 @@ AVOID_PASS_MARGIN_M = 0.20    # 장애물이 회피 반대쪽으로 이 거리�
                               # 옆 선이 보여도 최대 조향 유지. 차 반폭 + 여유
 AVOID_REACH_PX = 40           # 단, 새 선이 차 중심(LINE_CENTER_X_PX)에서 이만큼 안으로 오면
                               # 이미 새 차선이므로 바로 합류. 크면 일찍 풀려 장애물에 가까워짐
+RETRIGGER_MIN_M = 0.35        # 회피 시작 후 RETRIGGER_WINDOW_SEC 동안은 이보다 가까운 장애물로
+RETRIGGER_WINDOW_SEC = 2.0    # 다시 회피하지 않음(방금 피한 장애물). 새 장애물은 0.44 m 이상에서 잡힘
 LANE_GAP_MIN_PX = 90          # 기존 선과 이만큼 떨어진 흰 선만 옆 선으로 인정(640px 기준)
 NEIGHBOR_MIN_Y_RATIO = 0.70   # 옆 선은 화면 아래쪽(이 비율 아래)에서만 찾음
 
@@ -66,7 +68,7 @@ def validate_avoid_params():
         LIDAR_IGNORE_BELOW_M, SCAN_TIMEOUT_SEC,
         WHITE_V_MIN, WHITE_TOPHAT_MIN,
         AVOID_STEER_RATIO, AVOID_SPEED_US, AVOID_MAX_SEC, AVOID_PASS_MARGIN_M,
-        AVOID_REACH_PX,
+        AVOID_REACH_PX, RETRIGGER_MIN_M, RETRIGGER_WINDOW_SEC,
         LANE_GAP_MIN_PX,
         NEIGHBOR_MIN_Y_RATIO,
         MERGE_MAX_STEER_RATIO, MERGE_APPROACH_DEG_PER_PX, MERGE_APPROACH_MAX_DEG,
@@ -76,6 +78,8 @@ def validate_avoid_params():
         raise ValueError('회피 파라미터는 유한한 숫자여야 합니다')
     if not 0 <= LIDAR_IGNORE_BELOW_M < AVOID_TRIGGER_M:
         raise ValueError('0 <= 자기반사 무시 거리 < 회피 거리여야 합니다')
+    if not 0 <= RETRIGGER_MIN_M < AVOID_TRIGGER_M or RETRIGGER_WINDOW_SEC < 0:
+        raise ValueError('0 <= RETRIGGER_MIN_M < 회피 거리, RETRIGGER_WINDOW_SEC >= 0이어야 합니다')
     if AVOID_PASS_MARGIN_M < 0:
         raise ValueError('AVOID_PASS_MARGIN_M은 0 이상이어야 합니다')
     if CORRIDOR_HALF_WIDTH_M <= 0 or SCAN_TIMEOUT_SEC <= 0:
@@ -309,6 +313,7 @@ def main(argv=None):
             self.current_side = None
             self.target_side = None
             self.old_x = None
+            self.avoid_started_at = None
             # LiDAR.
             self.last_scan_at = None
             self.points = None
@@ -472,6 +477,7 @@ def main(argv=None):
             self.target_side = side
             self.old_x = self.track_x
             self.set_state('avoid')
+            self.avoid_started_at = self.state_since
             self.get_logger().warning(
                 f'장애물 {format_m(self.obstacle_m)}: {self.current_side or "?"} 선 -> '
                 f'{self.target_side} 선으로 회피 시작 (가까운 노란선이 {yellow_side}쪽)')
@@ -600,6 +606,12 @@ def main(argv=None):
                 approaching = (self.obstacle if self.state == 'follow' else
                                self.state == 'merge' and self.obstacle_m is not None
                                and self.obstacle_m <= AVOID_TRIGGER_M)
+                # Right after a lane change the obstacle just avoided can still
+                # be close ahead; a new one is first seen near AVOID_TRIGGER_M.
+                if (approaching and self.avoid_started_at is not None
+                        and now - self.avoid_started_at < RETRIGGER_WINDOW_SEC
+                        and self.obstacle_m < RETRIGGER_MIN_M):
+                    approaching = False
                 if approaching:
                     side = yellow_avoidance_side(yellow)
                     if side is None:
