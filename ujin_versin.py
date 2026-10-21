@@ -19,7 +19,7 @@ import numpy as np
 
 # ===== 조절할 제어 파라미터: 수정 후 다시 실행 =====
 # 1. 속도: 기존 실행 가능한 PWM 범위에서 먼저 조정
-STRAIGHT_SPEED_US = 1595  # 직선 기본값. --speed-us 옵션이 있으면 옵션이 우선
+STRAIGHT_SPEED_US = 1585  # 직선 기본값. --speed-us 옵션이 있으면 옵션이 우선
 CURVE_SPEED_US = 1586   # 커브/부분 검출 시 목표 저속값
 MAX_SPEED_US = 1596     # 실행 옵션 상한. 속도를 올릴 때 별도로 확인
 
