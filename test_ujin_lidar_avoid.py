@@ -73,5 +73,17 @@ class StripeReachedTests(unittest.TestCase):
         self.assertTrue(avoid.stripe_reached(self.centre + self.reach - 3, 'right', 640))
 
 
+class TrackedStripeTests(unittest.TestCase):
+    def test_follows_new_stripe_past_frozen_old_position(self):
+        # Right turn, old stripe lost at x=304: the gap test rejects 376,
+        # but the tracked new stripe keeps sliding toward the centre.
+        self.assertIsNone(avoid.neighbour_stripe([376], 304, 90, 'right'))
+        self.assertEqual(avoid.tracked_stripe([376], 399, 90), 376)
+
+    def test_ignores_other_stripe(self):
+        self.assertEqual(avoid.tracked_stripe([150, 480], 500, 90), 480)
+        self.assertIsNone(avoid.tracked_stripe([150], 500, 90))
+
+
 if __name__ == '__main__':
     unittest.main()

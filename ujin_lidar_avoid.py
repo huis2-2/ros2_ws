@@ -237,6 +237,12 @@ def neighbour_stripe(seeds, old_x, gap, side):
     return max(candidates) if side == 'left' else min(candidates)
 
 
+def tracked_stripe(seeds, last_x, gap):
+    """Seed nearest last_x if it moved less than gap, else None."""
+    near = [x for x in seeds if abs(x - last_x) < gap]
+    return min(near, key=lambda x: abs(x - last_x)) if near else None
+
+
 def side_steering(side, ratio):
     """Steering pulse turned toward one side by a fraction of that side's lock.
 
@@ -313,6 +319,7 @@ def main(argv=None):
             self.current_side = None
             self.target_side = None
             self.old_x = None
+            self.new_x = None
             self.avoid_started_at = None
             # LiDAR.
             self.last_scan_at = None
@@ -476,6 +483,7 @@ def main(argv=None):
             yellow_side = 'left' if side == 'right' else 'right'
             self.target_side = side
             self.old_x = self.track_x
+            self.new_x = None
             self.set_state('avoid')
             self.avoid_started_at = self.state_since
             self.get_logger().warning(
@@ -488,13 +496,21 @@ def main(argv=None):
             scale = width / 640
             gap = LANE_GAP_MIN_PX * scale
             seeds = stripe_seeds(white, NEIGHBOR_MIN_Y_RATIO)
-            # Follow where the stripe we are leaving has moved to. If it is
-            # lost, keep its last position: it only moves away from the target
-            # side while we turn, so it can never pass as the new stripe.
-            near = [x for x in seeds if abs(x - self.old_x) < gap / 2]
-            if near:
-                self.old_x = min(near, key=lambda x: abs(x - self.old_x))
-            new_x = neighbour_stripe(seeds, self.old_x, gap, self.target_side)
+            if self.new_x is None:
+                # Follow where the stripe we are leaving has moved to; if it is
+                # lost, keep its last position.
+                near = [x for x in seeds if abs(x - self.old_x) < gap / 2]
+                if near:
+                    self.old_x = min(near, key=lambda x: abs(x - self.old_x))
+                new_x = neighbour_stripe(seeds, self.old_x, gap, self.target_side)
+            else:
+                # Once seen, follow the new stripe itself. The stripe being left
+                # often drops out of view mid-turn, freezing old_x near the
+                # centre; the gap test would then reject the new stripe as it
+                # slides in, and old_x would jump onto it.
+                new_x = tracked_stripe(seeds, self.new_x, gap)
+            if new_x is not None:
+                self.new_x = new_x
             # Merging limits the approach angle, so keep full lock until the
             # obstacle has passed the LiDAR even if the new stripe is visible,
             # but no further than onto the new stripe.
