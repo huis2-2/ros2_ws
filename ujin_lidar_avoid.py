@@ -173,7 +173,7 @@ def lane_masks(image):
     return bev, white, yellow
 
 
-def stripe_seeds(mask, min_y_ratio, first_band_only=False):
+def stripe_seeds(mask, min_y_ratio):
     """White stripe x positions from the bottom band upward."""
     height, width = mask.shape
     seeds = []
@@ -189,8 +189,6 @@ def stripe_seeds(mask, min_y_ratio, first_band_only=False):
         if candidates.size:
             groups = np.split(candidates, np.flatnonzero(np.diff(candidates) > 1)+1)
             seeds += [float(np.mean(g)) for g in groups if g[-1]-g[0] < width*0.18]
-            if seeds and first_band_only:
-                break
     return seeds
 
 
@@ -208,14 +206,18 @@ def visible_yellow_side(mask):
 
     The full height of the bird's-eye image is searched without a yellow-line
     ROI. Direction is based on the image centre, not the followed white stripe.
+    The largest yellow blob is the stripe: specks and the beige obstacle box
+    can sit nearer the centre than the real stripe.
     """
-    width = mask.shape[1]
-    seeds = stripe_seeds(mask, 0.0, first_band_only=True)
-    if not seeds:
+    height, width = mask.shape
+    count, _, stats, _ = cv2.connectedComponentsWithStats(mask)
+    if count < 2:
         return None
-    centre_x = width / 2.0
-    nearest = min(seeds, key=lambda x: abs(x - centre_x))
-    return 'left' if nearest < centre_x else 'right'
+    largest = 1 + int(np.argmax(stats[1:, cv2.CC_STAT_AREA]))
+    if stats[largest, cv2.CC_STAT_AREA] < max(3, int(height * 0.015)):
+        return None
+    x = stats[largest, cv2.CC_STAT_LEFT] + stats[largest, cv2.CC_STAT_WIDTH] / 2.0
+    return 'left' if x < width / 2.0 else 'right'
 
 
 def yellow_avoidance_side(mask):

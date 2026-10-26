@@ -29,6 +29,14 @@ class NearbyYellowSideTests(unittest.TestCase):
         self.assertEqual(avoid.visible_yellow_side(mask), 'left')
         self.assertEqual(avoid.yellow_avoidance_side(mask), 'right')
 
+    def test_specks_near_centre_do_not_outvote_stripe(self):
+        # run_140534 60.69 s: stripe at x=545, specks around x=140.
+        mask = self.yellow_mask(545, 300)
+        mask[440:460, 130:140] = 255
+        mask[465:480, 155:165] = 255
+        self.assertEqual(avoid.visible_yellow_side(mask), 'right')
+        self.assertEqual(avoid.yellow_avoidance_side(mask), 'left')
+
     def test_no_yellow_has_no_avoidance_direction(self):
         mask = np.zeros((480, 640), dtype=np.uint8)
         self.assertIsNone(avoid.visible_yellow_side(mask))
