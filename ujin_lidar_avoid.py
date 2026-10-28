@@ -50,7 +50,8 @@ LANE_GAP_MIN_PX = 90          # 기존 선과 이만큼 떨어진 흰 선만 옆
 NEIGHBOR_MIN_Y_RATIO = 0.70   # 옆 선은 화면 아래쪽(이 비율 아래)에서만 찾음
 
 # 2-1. 노란 경계선: 장애물 감지 순간 화면에 보이는 노란선의 반대편으로 회피
-#      노란선이 안 보이면 멈추지 않고 현재 선 추종을 계속하며, 보이는 순간 회피 시작
+#      노란선이 안 보이면(오른쪽 선 주행 중에는 노란선이 BEV 밖) 지금 타는 선의
+#      반대쪽 선으로 회피. 어느 선인지도 모르면 현재 선 추종을 계속하며 다시 확인
 
 # 3. 새 선 합류: 선까지 남은 거리에 맞춘 진입 각도로 다가가 선을 지나치지 않게 함
 MERGE_MAX_STEER_RATIO = 0.92  # 합류 중 각 방향 최대 조향 대비 상한 비율(0~1)
@@ -226,6 +227,21 @@ def yellow_avoidance_side(mask):
     if yellow_side is None:
         return None
     return 'right' if yellow_side == 'left' else 'left'
+
+
+def avoidance_side(mask, current_side):
+    """Return (direction, reason) for a lane change, or (None, None).
+
+    Yellow decides when visible. Otherwise move to the other stripe: on the
+    right stripe the yellow line is far right, above the bird's-eye view, and
+    waiting for it drove the car into the obstacle.
+    """
+    side = yellow_avoidance_side(mask)
+    if side is not None:
+        return side, f'가까운 노란선이 {"left" if side == "right" else "right"}쪽'
+    if current_side in ('left', 'right'):
+        return ('right' if current_side == 'left' else 'left'), '노란선 없음, 반대쪽 선'
+    return None, None
 
 
 def neighbour_stripe(seeds, old_x, gap, side):
@@ -481,8 +497,7 @@ def main(argv=None):
                         f'속도={speed_us} us 장애물={format_m(self.obstacle_m)}')
             return fit, steering_us, speed_us, True
 
-        def start_avoid(self, side):
-            yellow_side = 'left' if side == 'right' else 'right'
+        def start_avoid(self, side, reason):
             self.target_side = side
             self.old_x = self.track_x
             self.new_x = None
@@ -490,7 +505,7 @@ def main(argv=None):
             self.avoid_started_at = self.state_since
             self.get_logger().warning(
                 f'장애물 {format_m(self.obstacle_m)}: {self.current_side or "?"} 선 -> '
-                f'{self.target_side} 선으로 회피 시작 (가까운 노란선이 {yellow_side}쪽)')
+                f'{self.target_side} 선으로 회피 시작 ({reason})')
 
         def avoid_step(self, white, now):
             """Steer toward the target side until the other stripe appears."""
@@ -633,19 +648,19 @@ def main(argv=None):
                         and self.obstacle_m < RETRIGGER_MIN_M):
                     approaching = False
                 if approaching:
-                    side = yellow_avoidance_side(yellow)
+                    side, reason = avoidance_side(yellow, self.current_side)
                     if side is None:
-                        # Yellow only decides the direction: without it, keep
-                        # following the current stripe and re-check next frame.
+                        # No direction yet: keep following the current stripe
+                        # and re-check next frame.
                         self.get_logger().warning(
-                            '장애물 감지, 화면에 노란선 없음: 회피 보류, 차선 추종 유지',
+                            '장애물 감지, 노란선도 현재 선도 모름: 회피 보류, 차선 추종 유지',
                             throttle_duration_sec=1.0)
                     else:
                         # Change lanes only after the current stripe is being tracked.
                         driving = (self.last_tracking_at is not None and self.track_x is not None
                                    and now - self.last_tracking_at < 0.3)
                         if driving:
-                            self.start_avoid(side)
+                            self.start_avoid(side, reason)
                 result = self.avoid_step(white, now) if self.state == 'avoid' else None
                 if result is not None:
                     steering_us, speed_us, moving = result

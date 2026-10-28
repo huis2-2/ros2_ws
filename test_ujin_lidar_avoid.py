@@ -43,6 +43,23 @@ class NearbyYellowSideTests(unittest.TestCase):
         self.assertIsNone(avoid.yellow_avoidance_side(mask))
 
 
+class AvoidanceSideTests(unittest.TestCase):
+    def test_yellow_overrides_current_side(self):
+        mask = np.zeros((480, 640), dtype=np.uint8)
+        mask[360:480, 450:458] = 255
+        self.assertEqual(avoid.avoidance_side(mask, 'left')[0], 'left')
+
+    def test_without_yellow_moves_to_other_stripe(self):
+        # run_133611 49.3 s: on the right stripe the yellow line is out of view.
+        mask = np.zeros((480, 640), dtype=np.uint8)
+        self.assertEqual(avoid.avoidance_side(mask, 'right')[0], 'left')
+        self.assertEqual(avoid.avoidance_side(mask, 'left')[0], 'right')
+
+    def test_without_yellow_or_side_waits(self):
+        mask = np.zeros((480, 640), dtype=np.uint8)
+        self.assertEqual(avoid.avoidance_side(mask, None), (None, None))
+
+
 class ObstaclePassTests(unittest.TestCase):
     def points(self, forward, lateral):
         return np.array([forward]), np.array([lateral])
