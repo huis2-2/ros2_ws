@@ -127,8 +127,8 @@ WHITE_UPPER_HSV = (111, 27, 255)
 # rejects the wide bright floor beside the track but keeps dim, blurred stripes.
 WHITE_TOPHAT_MIN = 0
 WHITE_TOPHAT_KERNEL_PX = 41
-YELLOW_LOWER_HSV = (0, 55,145)
-YELLOW_UPPER_HSV = (147, 160, 205)
+YELLOW_LOWER_HSV = (23, 35, 120)  # 베이지 박스(H 18~21)는 제외, 멀리 밝은 선(S~50, V~225)은 포함
+YELLOW_UPPER_HSV = (35, 255, 255)
 
 
 @dataclass

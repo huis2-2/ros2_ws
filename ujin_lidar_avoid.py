@@ -52,6 +52,8 @@ NEIGHBOR_MIN_Y_RATIO = 0.70   # 옆 선은 화면 아래쪽(이 비율 아래)�
 # 2-1. 노란 경계선: 장애물 감지 순간 화면에 보이는 노란선의 반대편으로 회피
 #      노란선이 안 보이면(오른쪽 선 주행 중에는 노란선이 BEV 밖) 지금 타는 선의
 #      반대쪽 선으로 회피. 어느 선인지도 모르면 현재 선 추종을 계속하며 다시 확인
+YELLOW_MIN_HEIGHT_RATIO = 0.2  # 노란 덩어리가 BEV 높이의 이 비율 이상 길어야 선. 박스 조각은 짧음
+YELLOW_MAX_WIDTH_PX = 30      # 노란 덩어리 평균 폭(640px 기준) 상한. 넓으면 박스 면
 
 # 3. 새 선 합류: 선까지 남은 거리에 맞춘 진입 각도로 다가가 선을 지나치지 않게 함
 MERGE_MAX_STEER_RATIO = 0.92  # 합류 중 각 방향 최대 조향 대비 상한 비율(0~1)
@@ -70,6 +72,7 @@ def validate_avoid_params():
         WHITE_V_MIN, WHITE_TOPHAT_MIN,
         AVOID_STEER_RATIO, AVOID_SPEED_US, AVOID_MAX_SEC, AVOID_PASS_MARGIN_M,
         AVOID_REACH_PX, RETRIGGER_MIN_M, RETRIGGER_WINDOW_SEC,
+        YELLOW_MIN_HEIGHT_RATIO, YELLOW_MAX_WIDTH_PX,
         LANE_GAP_MIN_PX,
         NEIGHBOR_MIN_Y_RATIO,
         MERGE_MAX_STEER_RATIO, MERGE_APPROACH_DEG_PER_PX, MERGE_APPROACH_MAX_DEG,
@@ -81,6 +84,8 @@ def validate_avoid_params():
         raise ValueError('0 <= 자기반사 무시 거리 < 회피 거리여야 합니다')
     if not 0 <= RETRIGGER_MIN_M < AVOID_TRIGGER_M or RETRIGGER_WINDOW_SEC < 0:
         raise ValueError('0 <= RETRIGGER_MIN_M < 회피 거리, RETRIGGER_WINDOW_SEC >= 0이어야 합니다')
+    if not 0 < YELLOW_MIN_HEIGHT_RATIO <= 1 or YELLOW_MAX_WIDTH_PX <= 0:
+        raise ValueError('노란선 모양 기준은 0 < 높이 비율 <= 1, 폭 > 0이어야 합니다')
     if AVOID_PASS_MARGIN_M < 0:
         raise ValueError('AVOID_PASS_MARGIN_M은 0 이상이어야 합니다')
     if CORRIDOR_HALF_WIDTH_M <= 0 or SCAN_TIMEOUT_SEC <= 0:
@@ -207,16 +212,18 @@ def visible_yellow_side(mask):
 
     The full height of the bird's-eye image is searched without a yellow-line
     ROI. Direction is based on the image centre, not the followed white stripe.
-    The largest yellow blob is the stripe: specks and the beige obstacle box
-    can sit nearer the centre than the real stripe.
+    The largest long, thin yellow blob is the stripe: specks and pieces of the
+    beige obstacle box are short, and a near box face is wide.
     """
     height, width = mask.shape
     count, _, stats, _ = cv2.connectedComponentsWithStats(mask)
-    if count < 2:
+    blob_h = stats[1:, cv2.CC_STAT_HEIGHT]
+    area = stats[1:, cv2.CC_STAT_AREA]
+    stripe = ((blob_h >= height * YELLOW_MIN_HEIGHT_RATIO)
+              & (area <= blob_h * YELLOW_MAX_WIDTH_PX * width / 640))
+    if not stripe.any():
         return None
-    largest = 1 + int(np.argmax(stats[1:, cv2.CC_STAT_AREA]))
-    if stats[largest, cv2.CC_STAT_AREA] < max(3, int(height * 0.015)):
-        return None
+    largest = 1 + int(np.argmax(np.where(stripe, area, -1)))
     x = stats[largest, cv2.CC_STAT_LEFT] + stats[largest, cv2.CC_STAT_WIDTH] / 2.0
     return 'left' if x < width / 2.0 else 'right'
 

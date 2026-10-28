@@ -25,7 +25,7 @@ class NearbyYellowSideTests(unittest.TestCase):
 
     def test_yellow_high_in_image_is_detected_without_roi(self):
         mask = np.zeros((480, 640), dtype=np.uint8)
-        mask[0:20, 180:188] = 255
+        mask[0:120, 180:188] = 255
         self.assertEqual(avoid.visible_yellow_side(mask), 'left')
         self.assertEqual(avoid.yellow_avoidance_side(mask), 'right')
 
@@ -36,6 +36,19 @@ class NearbyYellowSideTests(unittest.TestCase):
         mask[465:480, 155:165] = 255
         self.assertEqual(avoid.visible_yellow_side(mask), 'right')
         self.assertEqual(avoid.yellow_avoidance_side(mask), 'left')
+
+    def test_box_face_does_not_outvote_stripe(self):
+        # run_135303 29.1 s: a near box face on the right was the largest blob.
+        mask = self.yellow_mask(20, 200)
+        mask[0:300, 420:580] = 255
+        self.assertEqual(avoid.visible_yellow_side(mask), 'left')
+
+    def test_short_box_pieces_are_not_a_stripe(self):
+        # run_135303 86.6 s: only short fragments of the box edge.
+        mask = np.zeros((480, 640), dtype=np.uint8)
+        mask[50:133, 574:620] = 255
+        mask[139:151, 567:583] = 255
+        self.assertIsNone(avoid.visible_yellow_side(mask))
 
     def test_no_yellow_has_no_avoidance_direction(self):
         mask = np.zeros((480, 640), dtype=np.uint8)
