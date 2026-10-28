@@ -44,8 +44,8 @@ AVOID_PASS_MARGIN_M = 0.20    # 장애물이 회피 반대쪽으로 이 거리�
                               # 옆 선이 보여도 최대 조향 유지. 차 반폭 + 여유
 AVOID_REACH_PX = 40           # 단, 새 선이 차 중심(LINE_CENTER_X_PX)에서 이만큼 안으로 오면
                               # 이미 새 차선이므로 바로 합류. 크면 일찍 풀려 장애물에 가까워짐
-RETRIGGER_MIN_M = 0.35        # 회피 시작 후 RETRIGGER_WINDOW_SEC 동안은 이보다 가까운 장애물로
-RETRIGGER_WINDOW_SEC = 2.0    # 다시 회피하지 않음(방금 피한 장애물). 새 장애물은 0.44 m 이상에서 잡힘
+RETRIGGER_MIN_M = 0.5         # 회피 시작 후 RETRIGGER_WINDOW_SEC 동안은 이보다 가까운 장애물로
+RETRIGGER_WINDOW_SEC = 2.0    # 다시 회피하지 않음(방금 피한 장애물). 새 장애물은 0.5 m 이상에서 잡힘
 LANE_GAP_MIN_PX = 90          # 기존 선과 이만큼 떨어진 흰 선만 옆 선으로 인정(640px 기준)
 NEIGHBOR_MIN_Y_RATIO = 0.70   # 옆 선은 화면 아래쪽(이 비율 아래)에서만 찾음
 
@@ -621,9 +621,11 @@ def main(argv=None):
             else:
                 # A merge can run into the next obstacle in the new lane, so it
                 # may be interrupted by a fresh lane change as well.
-                approaching = (self.obstacle if self.state == 'follow' else
-                               self.state == 'merge' and self.obstacle_m is not None
-                               and self.obstacle_m <= AVOID_TRIGGER_M)
+                # self.obstacle stays set for CLEAR_CONFIRM_SCANS after the
+                # obstacle is gone, so also require it to be within range now.
+                near = self.obstacle_m is not None and self.obstacle_m <= AVOID_TRIGGER_M
+                approaching = near and (self.obstacle if self.state == 'follow'
+                                        else self.state == 'merge')
                 # Right after a lane change the obstacle just avoided can still
                 # be close ahead; a new one is first seen near AVOID_TRIGGER_M.
                 if (approaching and self.avoid_started_at is not None
