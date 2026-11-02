@@ -46,7 +46,7 @@ LANE_CONFIRM_FRAMES = 3     # 정상 차선을 연속 확인한 뒤 출발/재�
 # 5. 차선 유실 탐색: 코너에서 선이 사라지면 직전 조향보다 조금 더 선 쪽으로
 LOST_SEARCH_SEC = 1.0       # 마지막 추종 후 이 시간 동안 탐색 주행, 이후 정지
 LOST_SEARCH_EXTRA_US = 40   # 직전 조향에 더할 양. 크면 선을 지나치고 작으면 못 따라감
-LOST_SEARCH_SPEED_US = 1588  # 탐색 중 속도. CURVE_SPEED_US 이하 권장
+LOST_SEARCH_SPEED_US = 1580  # 탐색 중 속도. CURVE_SPEED_US 이하 권장
 
 # 6. 따라갈 선 선택: 흰 선이 두 줄이면 차 중심(LINE_CENTER_X_PX)에 가장 가까운 선을 잡음
 MAX_TRACK_JUMP_PX = 150     # 추종 중 이보다 멀리 떨어진 선으로는 바꾸지 않음(640px 기준)
