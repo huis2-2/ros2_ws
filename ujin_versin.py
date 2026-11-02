@@ -19,8 +19,8 @@ import numpy as np
 
 # ===== 조절할 제어 파라미터: 수정 후 다시 실행 =====
 # 1. 속도: 기존 실행 가능한 PWM 범위에서 먼저 조정
-STRAIGHT_SPEED_US = 1585  # 직선 기본값. --speed-us 옵션이 있으면 옵션이 우선
-CURVE_SPEED_US = 1585   # 커브/부분 검출 시 목표 저속값
+STRAIGHT_SPEED_US = 1580  # 직선 기본값. --speed-us 옵션이 있으면 옵션이 우선
+CURVE_SPEED_US = 1575 # 커브/부분 검출 시 목표 저속값
 MAX_SPEED_US = 1596     # 실행 옵션 상한. 속도를 올릴 때 별도로 확인
 
 # 2. 정상 차선 조향: 한 번에 한 값씩 변경
@@ -46,7 +46,7 @@ LANE_CONFIRM_FRAMES = 3     # 정상 차선을 연속 확인한 뒤 출발/재�
 # 5. 차선 유실 탐색: 코너에서 선이 사라지면 직전 조향보다 조금 더 선 쪽으로
 LOST_SEARCH_SEC = 1.0       # 마지막 추종 후 이 시간 동안 탐색 주행, 이후 정지
 LOST_SEARCH_EXTRA_US = 40   # 직전 조향에 더할 양. 크면 선을 지나치고 작으면 못 따라감
-LOST_SEARCH_SPEED_US = 1580  # 탐색 중 속도. CURVE_SPEED_US 이하 권장
+LOST_SEARCH_SPEED_US = 1575  # 탐색 중 속도. CURVE_SPEED_US 이하 권장
 
 # 6. 따라갈 선 선택: 흰 선이 두 줄이면 차 중심(LINE_CENTER_X_PX)에 가장 가까운 선을 잡음
 MAX_TRACK_JUMP_PX = 150     # 추종 중 이보다 멀리 떨어진 선으로는 바꾸지 않음(640px 기준)
