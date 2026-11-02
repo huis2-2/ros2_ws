@@ -25,8 +25,8 @@ import ujin_versin as lane
 # 1. 장애물 감지: LiDAR 중심 기준 거리(m). 앞 범퍼까지의 거리는 포함되지 않음
 SCAN_TOPIC = '/scan'
 FRONT_CENTER_DEG = 180.0      # 차량 정면 방향의 LiDAR 각도(기존 LiDAR 코드와 동일)
-AVOID_TRIGGER_M = 0.55     # 진행 통로 안 장애물이 이 거리 이내면 옆 선으로 회피(정지 없음)
-CORRIDOR_HALF_WIDTH_M = 0.1  # 진행 통로 반폭. 옆 선 위 물체는 무시되도록 선 간격의 절반 이하
+AVOID_TRIGGER_M = 0.75     # 진행 통로 안 장애물이 이 거리 이내면 옆 선으로 회피(정지 없음)
+CORRIDOR_HALF_WIDTH_M = 0.20  # 진행 통로 반폭. 옆 선 위 물체는 무시되도록 선 간격의 절반 이하
 LIDAR_IGNORE_BELOW_M = 0.03   # 차체 자기 반사 무시
 OBSTACLE_CONFIRM_SCANS = 1    # 연속 감지 스캔 수. 1이면 한 번 감지 즉시 회피
 CLEAR_CONFIRM_SCANS = 3       # 장애물 해제 확인 스캔 수
@@ -37,14 +37,14 @@ WHITE_V_MIN = 120             # 흰 선 최소 밝기(V). ujin_versin의 172보�
 WHITE_TOPHAT_MIN = 50         # 주변보다 이만큼 밝아야 선. 낮은 V에서 넓은 밝은 바닥을 걸러냄
 
 # 2. 회피 주행: 옆 선이 보일 때까지 고정 조향
-AVOID_STEER_RATIO = 0.8       # 회피 조향: 각 방향 최대 조향 대비 비율(0~1). 크면 급하게 꺾음
-AVOID_SPEED_US = 1580         # 회피/합류 중 속도
+AVOID_STEER_RATIO = 0.95        # 회피 조향: 각 방향 최대 조향 대비 비율(0~1). 크면 급하게 꺾음
+AVOID_SPEED_US = 1585         # 회피/합류 중 속도
 AVOID_MAX_SEC = 2.0           # 이 시간 안에 옆 선을 못 찾으면 보이는 선으로 일반 추종
-AVOID_PASS_MARGIN_M = 0.20    # 장애물이 회피 반대쪽으로 이 거리보다 가까우면 지나칠 때까지
+AVOID_PASS_MARGIN_M = 0.18    # 장애물이 회피 반대쪽으로 이 거리보다 가까우면 지나칠 때까지
                               # 옆 선이 보여도 최대 조향 유지. 차 반폭 + 여유
 AVOID_REACH_PX = 40           # 단, 새 선이 차 중심(LINE_CENTER_X_PX)에서 이만큼 안으로 오면
                               # 이미 새 차선이므로 바로 합류. 크면 일찍 풀려 장애물에 가까워짐
-RETRIGGER_MIN_M = 0.5         # 회피 시작 후 RETRIGGER_WINDOW_SEC 동안은 이보다 가까운 장애물로
+RETRIGGER_MIN_M = 0.3         # 회피 시작 후 RETRIGGER_WINDOW_SEC 동안은 이보다 가까운 장애물로
 RETRIGGER_WINDOW_SEC = 2.0    # 다시 회피하지 않음(방금 피한 장애물). 새 장애물은 0.5 m 이상에서 잡힘
 LANE_GAP_MIN_PX = 90          # 기존 선과 이만큼 떨어진 흰 선만 옆 선으로 인정(640px 기준)
 NEIGHBOR_MIN_Y_RATIO = 0.70   # 옆 선은 화면 아래쪽(이 비율 아래)에서만 찾음
@@ -57,7 +57,7 @@ YELLOW_MAX_WIDTH_PX = 30      # 노란 덩어리 평균 폭(640px 기준) 상한
 
 # 3. 새 선 합류: 선까지 남은 거리에 맞춘 진입 각도로 다가가 선을 지나치지 않게 함
 MERGE_MAX_STEER_RATIO = 0.92  # 합류 중 각 방향 최대 조향 대비 상한 비율(0~1)
-MERGE_APPROACH_DEG_PER_PX = 0.15  # 새 선까지 1px당 허용 진입 각도(도). 크면 늦게 펴서 지나침
+MERGE_APPROACH_DEG_PER_PX = 0.11  # 새 선까지 1px당 허용 진입 각도(도). 크면 늦게 펴서 지나침
 MERGE_APPROACH_MAX_DEG = 15.0  # 새 선에 다가가는 최대 진입 각도(도)
 MERGE_HEADING_KP = 0.08       # 진입 각도 오차(도)당 조향 명령. 크면 좌우로 흔들림
 MERGE_DONE_PX = 30            # 새 선 위치 오차가 이 이하이고
