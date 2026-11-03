@@ -31,6 +31,8 @@ LIDAR_IGNORE_BELOW_M = 0.03   # 차체 자기 반사 무시
 OBSTACLE_CONFIRM_SCANS = 1    # 연속 감지 스캔 수. 1이면 한 번 감지 즉시 회피
 CLEAR_CONFIRM_SCANS = 3       # 장애물 해제 확인 스캔 수
 SCAN_TIMEOUT_SEC = 0.5        # LiDAR가 이 시간 이상 끊기면 정지(센서 고장 대비)
+STARTUP_GRACE_SEC = 5.0       # 처음 주행 시작 후 이 시간 동안 회피 안 함(출발 시 옆 차선 오인식 방지).
+                              # 0이면 유예 없음(기존 동작)
 
 # 1-1. 흰 선 인식: 밝은 바닥/장애물이 보여 자동 노출로 영상이 어두워져도 선을 유지
 WHITE_V_MIN = 120             # 흰 선 최소 밝기(V). ujin_versin의 172보다 낮춰 어두운 프레임 대응
@@ -38,14 +40,14 @@ WHITE_TOPHAT_MIN = 50         # 주변보다 이만큼 밝아야 선. 낮은 V�
 
 # 2. 회피 주행: 옆 선이 보일 때까지 고정 조향
 AVOID_STEER_RATIO = 0.95        # 회피 조향: 각 방향 최대 조향 대비 비율(0~1). 크면 급하게 꺾음
-AVOID_SPEED_US = 1585         # 회피/합류 중 속도
+AVOID_SPEED_US = 1583         # 회피/합류 중 속도
 AVOID_MAX_SEC = 2.0           # 이 시간 안에 옆 선을 못 찾으면 보이는 선으로 일반 추종
-AVOID_PASS_MARGIN_M = 0.18    # 장애물이 회피 반대쪽으로 이 거리보다 가까우면 지나칠 때까지
+AVOID_PASS_MARGIN_M = 0.20    # 장애물이 회피 반대쪽으로 이 거리보다 가까우면 지나칠 때까지
                               # 옆 선이 보여도 최대 조향 유지. 차 반폭 + 여유
 AVOID_REACH_PX = 40           # 단, 새 선이 차 중심(LINE_CENTER_X_PX)에서 이만큼 안으로 오면
                               # 이미 새 차선이므로 바로 합류. 크면 일찍 풀려 장애물에 가까워짐
-RETRIGGER_MIN_M = 0.3         # 회피 시작 후 RETRIGGER_WINDOW_SEC 동안은 이보다 가까운 장애물로
-RETRIGGER_WINDOW_SEC = 2.0    # 다시 회피하지 않음(방금 피한 장애물). 새 장애물은 0.5 m 이상에서 잡힘
+RETRIGGER_MIN_M = 0.5         # 회피 시작 후 RETRIGGER_WINDOW_SEC 동안은 이보다 가까운 장애물로
+RETRIGGER_WINDOW_SEC = 5.0    # 다시 회피하지 않음(방금 피한 장애물). 새 장애물은 0.5 m 이상에서 잡힘
 LANE_GAP_MIN_PX = 90          # 기존 선과 이만큼 떨어진 흰 선만 옆 선으로 인정(640px 기준)
 NEIGHBOR_MIN_Y_RATIO = 0.70   # 옆 선은 화면 아래쪽(이 비율 아래)에서만 찾음
 
@@ -61,14 +63,14 @@ MERGE_APPROACH_DEG_PER_PX = 0.11  # 새 선까지 1px당 허용 진입 각도(�
 MERGE_APPROACH_MAX_DEG = 15.0  # 새 선에 다가가는 최대 진입 각도(도)
 MERGE_HEADING_KP = 0.08       # 진입 각도 오차(도)당 조향 명령. 크면 좌우로 흔들림
 MERGE_DONE_PX = 30            # 새 선 위치 오차가 이 이하이고
-MERGE_DONE_DEG = 10.0         # 선 각도가 90°에서 이 이내면 일반 추종으로 전환
-MERGE_MAX_SEC = 3.0           # 합류 최대 시간, 넘으면 일반 추종으로 전환
+MERGE_DONE_DEG = 25.0         # 선 각도가 90°에서 이 이내면 일반 추종으로 전환
+MERGE_MAX_SEC = 1.5           # 합류 최대 시간, 넘으면 일반 추종으로 전환
 
 
 def validate_avoid_params():
     numeric = (
         FRONT_CENTER_DEG, AVOID_TRIGGER_M, CORRIDOR_HALF_WIDTH_M,
-        LIDAR_IGNORE_BELOW_M, SCAN_TIMEOUT_SEC,
+        LIDAR_IGNORE_BELOW_M, SCAN_TIMEOUT_SEC, STARTUP_GRACE_SEC,
         WHITE_V_MIN, WHITE_TOPHAT_MIN,
         AVOID_STEER_RATIO, AVOID_SPEED_US, AVOID_MAX_SEC, AVOID_PASS_MARGIN_M,
         AVOID_REACH_PX, RETRIGGER_MIN_M, RETRIGGER_WINDOW_SEC,
@@ -84,6 +86,8 @@ def validate_avoid_params():
         raise ValueError('0 <= 자기반사 무시 거리 < 회피 거리여야 합니다')
     if not 0 <= RETRIGGER_MIN_M < AVOID_TRIGGER_M or RETRIGGER_WINDOW_SEC < 0:
         raise ValueError('0 <= RETRIGGER_MIN_M < 회피 거리, RETRIGGER_WINDOW_SEC >= 0이어야 합니다')
+    if STARTUP_GRACE_SEC < 0:
+        raise ValueError('STARTUP_GRACE_SEC는 0 이상이어야 합니다')
     if not 0 < YELLOW_MIN_HEIGHT_RATIO <= 1 or YELLOW_MAX_WIDTH_PX <= 0:
         raise ValueError('노란선 모양 기준은 0 < 높이 비율 <= 1, 폭 > 0이어야 합니다')
     if AVOID_PASS_MARGIN_M < 0:
@@ -336,6 +340,7 @@ def main(argv=None):
             self.last_tracking_steering = lane.STEERING_CENTER_US
             self.last_tracking_at = None
             self.last_seen_left = None
+            self.first_drive_at = None  # first time the car actually moved on a stripe
             # Lane change: follow -> avoid -> merge -> follow. Obstacles never stop the car.
             self.state = 'follow'
             self.state_since = self.started_at
@@ -406,6 +411,8 @@ def main(argv=None):
         def tracking(self, steering_us, observed_x, width):
             self.last_tracking_steering = steering_us
             self.last_tracking_at = time.monotonic()
+            if self.first_drive_at is None:
+                self.first_drive_at = self.last_tracking_at
             if observed_x is not None:
                 self.last_seen_left = observed_x < width / 2.0
 
@@ -654,6 +661,14 @@ def main(argv=None):
                         and now - self.avoid_started_at < RETRIGGER_WINDOW_SEC
                         and self.obstacle_m < RETRIGGER_MIN_M):
                     approaching = False
+                # At the start the car may sit at an angle to the lane, so the
+                # straight corridor can reach an obstacle in the other lane.
+                if approaching and (self.first_drive_at is None
+                                    or now - self.first_drive_at < STARTUP_GRACE_SEC):
+                    approaching = False
+                    self.get_logger().info(
+                        f'출발 유예 중: 장애물 {format_m(self.obstacle_m)} 무시, 차선 추종 유지',
+                        throttle_duration_sec=1.0)
                 if approaching:
                     side, reason = avoidance_side(yellow, self.current_side)
                     if side is None:

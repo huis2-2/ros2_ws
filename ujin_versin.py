@@ -19,13 +19,13 @@ import numpy as np
 
 # ===== 조절할 제어 파라미터: 수정 후 다시 실행 =====
 # 1. 속도: 기존 실행 가능한 PWM 범위에서 먼저 조정
-STRAIGHT_SPEED_US = 1595  # 직선 기본값. --speed-us 옵션이 있으면 옵션이 우선
-CURVE_SPEED_US = 1587 # 커브/부분 검출 시 목표 저속값
-MAX_SPEED_US = 1597     # 실행 옵션 상한. 속도를 올릴 때 별도로 확인
+STRAIGHT_SPEED_US = 1598  # 직선 기본값. --speed-us 옵션이 있으면 옵션이 우선
+CURVE_SPEED_US = 1587   # 커브/부분 검출 시 목표 저속값
+MAX_SPEED_US = 1599     # 실행 옵션 상한. 속도를 올릴 때 별도로 확인
 
 # 2. 정상 차선 조향: 한 번에 한 값씩 변경
-KP_LATERAL = 0.016       # 앞쪽 목표점(선 위)의 위치 오차 보정. 시험 간격: 0.001
-KP_HEADING = 0.00        # 방향 오차(도 단위) 보정. 크면 선 반대로 꺾음. 시험 간격: 0.01
+KP_LATERAL = 0.017       # 앞쪽 목표점(선 위)의 위치 오차 보정. 시험 간격: 0.001
+KP_HEADING = 0.0       # 방향 오차(도 단위) 보정. 크면 선 반대로 꺾음. 시험 간격: 0.01
 DEADBAND_PX = 10.0         # 640px 폭 기준, 이보다 작은 위치 오차는 무시
 HEADING_DEADBAND_DEG = 1.0  # 이보다 작은 방향 오차(도)는 무시
 LINE_CENTER_X_PX = 310.0  # 차 중심이 선 위에 있을 때 화면상 선 위치(640px 기준, 실측)
@@ -34,7 +34,7 @@ MAX_ANGULAR = 2.0        # 내부 명령 정규화 상한(실제 바퀴 각도 �
 
 # 3. 커브 감속: severity=max(|방향오차|/30도, |조향PWM-중앙|/좌우범위)
 TURN_SLOW_START = 0.12    # 이 지표부터 감속 시작. 낮출수록 빨리 감속
-TURN_SLOW_FULL = 0.50     # 이 지표에서 CURVE_SPEED_US까지 감속
+TURN_SLOW_FULL = 0.45     # 이 지표에서 CURVE_SPEED_US까지 감속
 
 # 4. 부분 검출: 마지막 정상 조향을 기준으로 제한적 보정
 PARTIAL_MAX_CHANGE_US = 25  # 마지막 정상 조향에서 허용할 최대 변화 ±us
@@ -372,7 +372,7 @@ def fit_lane_track(mask, previous_x=None):
         return None
     partial = len(valid) < 5 or top_y > height*0.66 or bottom_y < height*0.85
     # Partial tracks use a line and an observed target: no blind extrapolation.
-    target_y = max(int(height*0.70), top_y)
+    target_y = max(int(height*0.65), top_y)
     if target_y >= bottom_y:
         target_y = top_y
     coefficients = np.polyfit(valid[:,1]/height, valid[:,0], 1 if partial else 2)
